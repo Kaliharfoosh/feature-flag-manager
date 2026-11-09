@@ -1,0 +1,41 @@
+{
+  "name": "feature-flag-manager",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev:api": "nodemon --exec \"node --env-file=.env\" server/src/local.js",
+    "dev:web": "npm --prefix client run dev",
+    "migrate": "node --env-file=.env server/db/migrate.js",
+    "seed": "node --env-file=.env server/db/seed.js",
+    "test": "jest --runInBand"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kaliharfoosh/feature-flag-manager.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Kaliharfoosh/feature-flag-manager/issues"
+  },
+  "homepage": "https://github.com/Kaliharfoosh/feature-flag-manager#readme",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "connect-pg-simple": "^10.0.0",
+    "csrf-sync": "^4.2.1",
+    "express": "^5.3.0",
+    "express-session": "^1.19.0",
+    "helmet": "^8.3.0",
+    "pg": "^8.23.1",
+    "pino": "^10.4.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "jest": "^30.5.2",
+    "nodemon": "^3.1.14",
+    "supertest": "^7.3.2"
+  }
+}
