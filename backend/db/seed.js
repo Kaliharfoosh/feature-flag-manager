@@ -41,6 +41,7 @@ const TEAMS = [
 async function seed(connectionString, password, { quiet = false } = {}) {
   if (!password || password.length < 12) throw new Error('SEED_PASSWORD must be at least 12 characters.');
   const say = (msg) => { if (!quiet) console.log(msg); };
+  if (bcrypt.truncates(password)) throw new Error('SEED_PASSWORD must be at most 72 bytes.');
   const hash = await bcrypt.hash(password, 12);
   const client = new Client({ connectionString });
   await client.connect();

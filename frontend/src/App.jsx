@@ -1,120 +1,116 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
+import { useEffect, useState } from 'react'
+import { getSession, signIn, signOut } from './auth/api.js'
+import LoginForm from './auth/LoginForm.jsx'
 import './App.css'
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [session, setSession] = useState(undefined)
+  const [sessionError, setSessionError] = useState('')
+  const [sessionCheck, setSessionCheck] = useState(0)
+  const [signingOut, setSigningOut] = useState(false)
+  const [logoutError, setLogoutError] = useState('')
+
+  useEffect(() => {
+    const controller = new AbortController()
+
+    getSession(controller.signal).then((current) => {
+      if (!controller.signal.aborted) setSession(current)
+    }).catch((error) => {
+      if (controller.signal.aborted) return
+      if (error.status === 401) {
+        setSession(null)
+      } else {
+        setSessionError(error.message)
+      }
+    })
+
+    return () => controller.abort()
+  }, [sessionCheck])
+
+  function retrySession() {
+    setSessionError('')
+    setSessionCheck((attempt) => attempt + 1)
+  }
+
+  async function handleSignIn(email, password) {
+    await signIn(email, password)
+    try {
+      setSession(await getSession())
+    } catch (error) {
+      if (error.status === 401) {
+        throw new Error('The session could not be started. Allow cookies for this site and try again.')
+      }
+      setSession(undefined)
+      setSessionError(error.message)
+    }
+  }
+
+  async function handleSignOut() {
+    if (signingOut) return
+
+    setSigningOut(true)
+    setLogoutError('')
+    try {
+      await signOut(session.csrfToken)
+      setSession(null)
+    } catch (error) {
+      if (error.status === 401) {
+        setSession(null)
+      } else {
+        setLogoutError(error.status === 403
+          ? 'The session has changed. Refresh this page and try again.'
+          : error.message)
+      }
+    } finally {
+      setSigningOut(false)
+    }
+  }
 
   return (
     <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+      <header className="app-header">
+        <div className="header-content">
+          <div className="brand">
+            <span className="brand-mark" aria-hidden="true" />
+            Feature Flag Manager
+          </div>
+          {session && (
+            <button className="secondary" type="button" onClick={handleSignOut} disabled={signingOut}>
+              {signingOut ? 'Signing out…' : 'Sign out'}
+            </button>
+          )}
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+      </header>
 
-      <div className="ticks"></div>
+      <main className="page">
+        {session === undefined && (
+          <section className="panel" aria-label="Session status">
+            {sessionError ? (
+              <>
+                <h1>Couldn’t check your session</h1>
+                <p className="error" role="alert">{sessionError}</p>
+                <button className="primary" type="button" onClick={retrySession}>Try again</button>
+              </>
+            ) : (
+              <p role="status">Checking your session…</p>
+            )}
+          </section>
+        )}
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+        {session === null && <LoginForm onSignIn={handleSignIn} />}
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
+        {session && (
+          <section className="panel" aria-labelledby="account-heading">
+            <h1 id="account-heading">Your account</h1>
+            <dl className="account-details">
+              <div><dt>Name</dt><dd>{session.user.name}</dd></div>
+              <div><dt>Email</dt><dd>{session.user.email}</dd></div>
+              <div><dt>Role</dt><dd className="account-role">{session.user.role}</dd></div>
+            </dl>
+            {logoutError && <p className="error" role="alert">{logoutError}</p>}
+          </section>
+        )}
+      </main>
     </>
   )
 }

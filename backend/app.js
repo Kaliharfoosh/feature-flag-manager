@@ -7,7 +7,6 @@ const PgStore = require('connect-pg-simple')(session);
 const { pool } = require('./db/pool');
 
 const app = express();
-app.set('trust proxy', 1); // Vercel terminates TLS in front of us
 app.use(helmet());
 app.use(require('./middleware/request-logger')); // time, method, path, requestId: never the body
 app.use(require('./middleware/require-json'));   // 415 when a body is not JSON (Lab 4)
@@ -33,7 +32,7 @@ app.get('/api/v1/health', async (req, res) => {
 });
 
 // Service routers. Each owner uncomments their line when routes.js exists.
-// app.use('/api/v1/auth', require('./services/auth/routes'));             // S1
+app.use('/api/v1/auth', require('./services/auth/routes'));
 // app.use('/api/v1/flags', require('./services/flags/routes'));           // S1
 // app.use('/api/v1', require('./services/keys-evaluation/routes'));       // S2
 // app.use('/api/v1', require('./services/audit-alerts/routes'));          // S3
