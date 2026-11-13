@@ -62,4 +62,34 @@ async function raiseFor(db, row, auditEventId) {
   return rows[0];
 }
 
-module.exports = { raiseFor, candidateRule, titleFor, RULES, LOGIN_FAILURE_THRESHOLD, LOGIN_FAILURE_WINDOW };
+// All three rules for a team, in RULES order, with missing rows shown as enabled.
+async function getRules(db, teamId) {
+  const { rows } = await db.query('SELECT rule, enabled FROM alert_rules WHERE team_id = $1', [teamId]);
+  const stored = new Map(rows.map((r) => [r.rule, r.enabled]));
+  return RULES.map((rule) => ({ rule, enabled: stored.get(rule) ?? true }));
+}
+
+// Saves the given rules (others keep their value) and audits the change, all on the caller's
+// transaction client. Returns { before, after } with every rule in each.
+async function updateRules(db, req, changes) {
+  const before = await getRules(db, req.user.teamId);
+  for (const { rule, enabled } of changes) {
+    await db.query(
+      `INSERT INTO alert_rules (team_id, rule, enabled) VALUES ($1, $2, $3)
+       ON CONFLICT (team_id, rule) DO UPDATE SET enabled = EXCLUDED.enabled`,
+      [req.user.teamId, rule, enabled],
+    );
+  }
+  const after = await getRules(db, req.user.teamId);
+  // Required here, not at the top: shared/audit.js requires this file.
+  await require('../../shared/audit').record(db, req, {
+    action: 'alert_rules.updated', targetType: 'alert_rules', targetId: req.user.teamId,
+    before: { rules: before }, after: { rules: after },
+  });
+  return { before, after };
+}
+
+module.exports = {
+  raiseFor, candidateRule, titleFor, getRules, updateRules,
+  RULES, LOGIN_FAILURE_THRESHOLD, LOGIN_FAILURE_WINDOW,
+};

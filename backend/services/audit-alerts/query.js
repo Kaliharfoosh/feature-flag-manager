@@ -84,8 +84,10 @@ async function summary(teamId, days, db = pool) {
   };
 }
 
-// Security dashboard. server.error and rate_limit.hit are security events written with
-// audit.recordSecurity() by the error handler and the rate limiters.
+// Security dashboard. server.error is written by middleware/errors.js. A login refused by the
+// rate limit is a login.failed event with details.rateLimited = true (services/auth/service.js);
+// rate_limit.hit is kept for other limiters, such as the per-key limit on /evaluations.
+const RATE_LIMITED = `(action = 'rate_limit.hit' OR (action = 'login.failed' AND details->>'rateLimited' = 'true'))`;
 async function monitoring(teamId, hours, db = pool) {
   const window = [teamId, hours];
   const since = 'at > now() - make_interval(hours => $2)';
@@ -95,7 +97,7 @@ async function monitoring(teamId, hours, db = pool) {
        count(*) FILTER (WHERE action = 'login.failed')::int   AS failed_logins,
        count(*) FILTER (WHERE action = 'access.denied')::int  AS forbidden,
        count(*) FILTER (WHERE action = 'server.error')::int   AS server_errors,
-       count(*) FILTER (WHERE action = 'rate_limit.hit')::int AS rate_limited,
+       count(*) FILTER (WHERE ${RATE_LIMITED})::int AS rate_limited,
        (SELECT count(*) FROM alerts
          WHERE team_id = $1 AND status = 'failed'
            AND updated_at > now() - make_interval(hours => $2))::int AS alert_failures

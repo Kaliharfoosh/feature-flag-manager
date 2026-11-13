@@ -98,14 +98,28 @@ describeDb('alerts and audit queries against Postgres', () => {
 
   test('monitoring totals, top IPs and an hourly series with no holes (AUD-15)', async () => {
     for (let i = 0; i < 3; i += 1) await audit.recordSecurity({ ip: '203.0.113.9' }, 'login.failed', {}, { teamId, db: client });
-    await audit.recordSecurity({ ip: '198.51.100.4' }, 'login.failed', {}, { teamId, db: client });
+    await audit.recordSecurity({ ip: '198.51.100.4' }, 'login.failed', { rateLimited: true }, { teamId, db: client });
     await audit.recordSecurity(req('dev@it.test', teamId), 'access.denied', {}, { db: client });
 
     const m = await query.monitoring(teamId, 24, client);
-    expect(m).toMatchObject({ hours: 24, failedLogins: 4, forbidden: 1, serverErrors: 0, rateLimited: 0, alertFailures: 0 });
+    expect(m).toMatchObject({ hours: 24, failedLogins: 4, forbidden: 1, serverErrors: 0, rateLimited: 1, alertFailures: 0 });
     expect(m.topFailedLoginIps).toEqual([{ ip: '203.0.113.9', count: 3 }, { ip: '198.51.100.4', count: 1 }]);
     expect(m.series).toHaveLength(24);
     expect(m.series[23]).toMatchObject({ failedLogins: 4, forbidden: 1 });
+  });
+
+  test('updating alert rules saves them and writes alert_rules.updated', async () => {
+    const r = req('admin@it.test', teamId);
+    await alerts.updateRules(client, r, [{ rule: 'prod_change', enabled: false }]);
+    await alerts.updateRules(client, r, [{ rule: 'prod_change', enabled: true }, { rule: 'key_change', enabled: false }]);
+    expect(await alerts.getRules(client, teamId)).toEqual([
+      { rule: 'prod_change', enabled: true },
+      { rule: 'key_change', enabled: false },
+      { rule: 'login_failures', enabled: true },
+    ]);
+    const { items } = await query.listEvents(teamId, schema.parseAuditList({ action: 'alert_rules.updated' }), client);
+    expect(items).toHaveLength(2);
+    expect(items[0].details.after.rules[1]).toEqual({ rule: 'key_change', enabled: false });
   });
 
   test('export returns the same filtered events as the list', async () => {

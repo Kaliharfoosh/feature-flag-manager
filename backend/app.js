@@ -35,7 +35,7 @@ app.get('/api/v1/health', async (req, res) => {
 app.use('/api/v1/auth', require('./services/auth/routes'));
 // app.use('/api/v1/flags', require('./services/flags/routes'));           // S1
 // app.use('/api/v1', require('./services/keys-evaluation/routes'));       // S2
-// app.use('/api/v1', require('./services/audit-alerts/routes'));          // S3
+app.use('/api/v1', require('./services/audit-alerts/routes'));            // S3
 
 app.use(require('./middleware/not-found')); // 404 ROUTE_NOT_FOUND
 app.use(require('./middleware/errors'));    // 400 bad JSON · 413 · 500 · { error: { code, message, requestId } }
