@@ -1,13 +1,13 @@
 {
   "name": "feature-flag-manager",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Feature Flag Manager: 26CSCN29H coursework, Group 21",
+  "main": "backend/app.js",
   "scripts": {
-    "dev:api": "nodemon --exec \"node --env-file=.env\" server/src/local.js",
-    "dev:web": "npm --prefix client run dev",
-    "migrate": "node --env-file=.env server/db/migrate.js",
-    "seed": "node --env-file=.env server/db/seed.js",
+    "dev:api": "nodemon --exec \"node --env-file=.env\" backend/server.js",
+    "dev:web": "npm --prefix frontend run dev",
+    "migrate": "node --env-file=.env backend/db/migrate.js",
+    "seed": "node --env-file=.env backend/db/seed.js",
     "test": "jest --runInBand"
   },
   "repository": {
