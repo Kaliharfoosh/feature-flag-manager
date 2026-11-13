@@ -90,6 +90,11 @@ module.exports = {
   parseSummary: (q) => parse(summarySchema, q),
   parseMonitoring: (q) => parse(monitoringSchema, q),
   parseAlertRules: (body) => parse(alertRulesSchema, body),
+  // :auditId in /alerts/:auditId/github-issue. Kept as text: bigserial ids can outgrow Number.
+  parseAuditId: (value) => {
+    if (!/^[1-9]\d{0,17}$/.test(String(value))) throw validationError('auditId must be a positive whole number.');
+    return String(value);
+  },
   encodeCursor,
   validationError,
 };

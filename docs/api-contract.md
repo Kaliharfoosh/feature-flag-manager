@@ -411,7 +411,16 @@ An audit event as returned by the API:
 { "alertId": "al1…", "auditEventId": 1042, "status": "sent", "githubIssueNumber": 17, "githubIssueUrl": "https://github.com/<owner>/<repo>/issues/17" }
 ```
 
-- Errors: `401`, `403`, `404` (no alert for that audit id), `502 UPSTREAM_FAILED` (GitHub rejected or timed out; the alert stays `failed` with `lastError` and can be retried).
+- `200 OK` with the same body when the issue already exists (GitHub is not called again).
+- Errors: `400` (auditId not a number), `401`, `403`, `404` (no alert for that audit id), `409 CONFLICT` (the alert is being sent right now), `502 UPSTREAM_FAILED` (GitHub rejected or timed out within 3 s; the alert stays `failed` with `lastError` and can be retried).
+- The first attempt happens automatically right after the change that raised the alert is committed; this endpoint is the retry.
+- Audit: `alert.issue_requested` with the resulting status.
+
+### GET /alerts — the team's latest alerts (for the Retry button)
+
+- Who: Admin
+- `200 OK`: `{ "items": [ { "alertId", "auditEventId", "rule", "title", "status", "githubIssueNumber", "githubIssueUrl", "lastError", "createdAt" } ] }`, newest first, at most 50.
+- Errors: `401`, `403`.
 - The GitHub token is read from the server environment only and never appears in any response or log.
 
 ---

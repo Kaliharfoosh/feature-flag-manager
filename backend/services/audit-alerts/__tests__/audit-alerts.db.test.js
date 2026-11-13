@@ -7,6 +7,7 @@ const audit = require('../../../shared/audit');
 const alerts = require('../alerts');
 const query = require('../query');
 const schema = require('../schema');
+const github = require('../github');
 
 const url = process.env.DATABASE_URL;
 const describeDb = url ? describe : describe.skip;
@@ -120,6 +121,28 @@ describeDb('alerts and audit queries against Postgres', () => {
     const { items } = await query.listEvents(teamId, schema.parseAuditList({ action: 'alert_rules.updated' }), client);
     expect(items).toHaveLength(2);
     expect(items[0].details.after.rules[1]).toEqual({ rule: 'key_change', enabled: false });
+  });
+
+  test('GitHub delivery: failed, then retried to sent, against the real alerts table', async () => {
+    const r = req('admin@it.test', teamId);
+    const { id: auditId, alert } = await audit.record(client, r, { action: 'flag.toggled', details: { env: 'prod' } });
+    expect(r.pendingAlerts).toEqual([alert.id]);
+    const env = { GITHUB_TOKEN: 'test-token', GITHUB_REPO: 'o/r' };
+
+    const down = jest.fn(async () => ({ status: 503, json: async () => ({ message: 'Service Unavailable' }) }));
+    await expect(github.deliver(alert.id, { db: client, fetchImpl: down, env })).rejects.toMatchObject({ code: 'UPSTREAM_FAILED' });
+    let row = await github.findAlertForEvent(teamId, String(auditId), client);
+    expect(row).toMatchObject({ status: 'failed', last_error: 'GitHub answered 503: Service Unavailable' });
+
+    const up = jest.fn(async () => ({ status: 201, json: async () => ({ number: 5, html_url: 'https://github.com/o/r/issues/5' }) }));
+    await github.deliver(alert.id, { db: client, fetchImpl: up, env });
+    row = await github.findAlertForEvent(teamId, String(auditId), client);
+    expect(row).toMatchObject({ status: 'sent', github_issue_number: 5, last_error: null });
+    expect(JSON.parse(up.mock.calls[0][1].body).body).toContain('**Action:** `flag.toggled`');
+
+    await expect(github.deliver(alert.id, { db: client, fetchImpl: up, env })).resolves.toBeNull(); // never twice
+    expect(up).toHaveBeenCalledTimes(1);
+    expect((await github.listAlerts(teamId, client))[0]).toMatchObject({ status: 'sent', githubIssueNumber: 5 });
   });
 
   test('export returns the same filtered events as the list', async () => {

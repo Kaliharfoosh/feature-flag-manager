@@ -3,6 +3,7 @@ const { promisify } = require('node:util');
 const { z } = require('zod');
 const { generateToken } = require('../../middleware/csrf');
 const { authenticate } = require('./service');
+const { deliverPending } = require('../audit-alerts/github');
 
 const loginInput = z.object({
   email: z.string().trim().max(254).email().toLowerCase(),
@@ -21,11 +22,15 @@ async function login(req, res) {
     });
   }
 
-  const { user, rateLimited } = await authenticate({
+  const { user, rateLimited, pendingAlerts } = await authenticate({
     ...input.data,
     ip: req.ip ?? null,
     requestId: req.id,
   });
+  // Repeated failures can raise a login_failures alert; open its GitHub issue now that the
+  // attempt is committed. Never throws, so the 401/429 below is unchanged.
+  req.pendingAlerts = pendingAlerts;
+  await deliverPending(req);
   if (rateLimited) {
     throw Object.assign(new Error('Too many failed sign-in attempts. Try again later.'), {
       status: 429,
