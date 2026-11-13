@@ -6,6 +6,10 @@ jest.mock('connect-pg-simple', () => (session) => session.MemoryStore);
 jest.mock('../../../db/pool', () => ({ pool: { connect: jest.fn(), query: jest.fn() } }));
 jest.mock('../../auth/service', () => ({ authenticate: jest.fn(), findById: jest.fn() }));
 jest.mock('../query');
+jest.mock('../github', () => ({
+  ...jest.requireActual('../github'),
+  deliver: jest.fn(), deliverPending: jest.fn(), findAlertForEvent: jest.fn(), listAlerts: jest.fn(),
+}));
 
 process.env.SESSION_SECRET = 'session-secret-for-audit-tests';
 process.env.LOG_LEVEL = 'silent';
@@ -14,6 +18,7 @@ const app = require('../../../app');
 const { pool } = require('../../../db/pool');
 const authService = require('../../auth/service');
 const query = require('../query');
+const github = require('../github');
 
 const teamId = '699df5c7-e092-4a81-b7cb-14d6ea382378';
 const users = {
@@ -200,6 +205,78 @@ describe('alert rules', () => {
       .send({ rules: [{ rule: 'key_change', enabled: false }] }).expect(500);
     expect(tx.query).toHaveBeenLastCalledWith('ROLLBACK');
     expect(tx.release).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('POST /alerts/:auditId/github-issue', () => {
+  const alertRow = (status, extra = {}) => ({
+    id: 'al1', team_id: teamId, audit_event_id: '1042', rule: 'prod_change', title: 'Prod change',
+    status, github_issue_number: null, github_issue_url: null, last_error: null, created_at: new Date('2026-11-13T14:05:00Z'), ...extra,
+  });
+  const url = `${api}/alerts/1042/github-issue`;
+
+  test('201 with the issue number, and the request is audited (AUD-21)', async () => {
+    github.findAlertForEvent.mockResolvedValue(alertRow('failed', { last_error: 'GitHub answered 401' }));
+    github.deliver.mockResolvedValue(alertRow('sent', { github_issue_number: 17, github_issue_url: 'https://github.com/o/r/issues/17' }));
+    const { agent, csrf } = await signIn('admin');
+    const res = await agent.post(url).set('X-CSRF-Token', csrf).expect(201);
+    expect(res.body).toMatchObject({ alertId: 'al1', auditEventId: 1042, status: 'sent', githubIssueNumber: 17, githubIssueUrl: 'https://github.com/o/r/issues/17' });
+    expect(github.findAlertForEvent).toHaveBeenCalledWith(teamId, '1042');
+    expect(insertedActions(pool.query)).toEqual(['alert.issue_requested']);
+  });
+
+  test('already sent: 200 with the existing issue, GitHub not called again', async () => {
+    github.findAlertForEvent.mockResolvedValue(alertRow('sent', { github_issue_number: 17 }));
+    const { agent, csrf } = await signIn('admin');
+    const res = await agent.post(url).set('X-CSRF-Token', csrf).expect(200);
+    expect(res.body.githubIssueNumber).toBe(17);
+    expect(github.deliver).not.toHaveBeenCalled();
+  });
+
+  test('GitHub failing is 502 UPSTREAM_FAILED and still audited (AUD-22)', async () => {
+    github.findAlertForEvent.mockResolvedValue(alertRow('open'));
+    github.deliver.mockRejectedValue(Object.assign(new Error('GitHub answered 401: Bad credentials'), { status: 502, code: 'UPSTREAM_FAILED' }));
+    const { agent, csrf } = await signIn('admin');
+    const res = await agent.post(url).set('X-CSRF-Token', csrf).expect(502);
+    expect(res.body.error).toMatchObject({ code: 'UPSTREAM_FAILED', message: 'GitHub answered 401: Bad credentials' });
+    const [, params] = pool.query.mock.calls.find(([sql]) => sql.startsWith('INSERT INTO audit_events'));
+    expect(JSON.parse(params[7])).toEqual({ rule: 'prod_change', status: 'failed' });
+  });
+
+  test('already being sent is 409', async () => {
+    github.findAlertForEvent.mockResolvedValue(alertRow('sending'));
+    github.deliver.mockResolvedValue(null);
+    const { agent, csrf } = await signIn('admin');
+    const res = await agent.post(url).set('X-CSRF-Token', csrf).expect(409);
+    expect(res.body.error.code).toBe('CONFLICT');
+  });
+
+  test('no alert for that id (or another team\'s) is 404 (AUD-24)', async () => {
+    github.findAlertForEvent.mockResolvedValue(null);
+    const { agent, csrf } = await signIn('admin');
+    await agent.post(`${api}/alerts/999999/github-issue`).set('X-CSRF-Token', csrf).expect(404);
+  });
+
+  test('a non-numeric id is 400', async () => {
+    const { agent, csrf } = await signIn('admin');
+    await agent.post(`${api}/alerts/1%20OR%201=1/github-issue`).set('X-CSRF-Token', csrf).expect(400);
+    expect(github.findAlertForEvent).not.toHaveBeenCalled();
+  });
+
+  test('Developer 403 (AUD-23), missing CSRF 403', async () => {
+    const dev = await signIn('developer');
+    await dev.agent.post(url).set('X-CSRF-Token', dev.csrf).expect(403);
+    const admin = await signIn('admin');
+    const res = await admin.agent.post(url).expect(403);
+    expect(res.body.error.code).toBe('CSRF_INVALID');
+    expect(github.deliver).not.toHaveBeenCalled();
+  });
+
+  test('GET /alerts lists the team\'s alerts for Admins', async () => {
+    github.listAlerts.mockResolvedValue([]);
+    const { agent } = await signIn('admin');
+    await agent.get(`${api}/alerts`).expect(200, { items: [] });
+    expect(github.listAlerts).toHaveBeenCalledWith(teamId);
   });
 });
 

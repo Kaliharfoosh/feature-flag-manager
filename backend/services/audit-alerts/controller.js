@@ -5,6 +5,8 @@ const schema = require('./schema');
 const query = require('./query');
 const alerts = require('./alerts');
 const csv = require('./csv');
+const github = require('./github');
+const audit = require('../../shared/audit');
 
 async function listAudit(req, res) {
   const filters = schema.parseAuditList(req.query);
@@ -51,4 +53,41 @@ async function putAlertRules(req, res) {
   }
 }
 
-module.exports = { listAudit, auditSummary, exportAudit, monitoring, getAlertRules, putAlertRules };
+async function listAlerts(req, res) {
+  res.json({ items: await github.listAlerts(req.user.teamId) });
+}
+
+function conflict(message) {
+  return Object.assign(new Error(message), { status: 409, code: 'CONFLICT' });
+}
+
+// Creates the GitHub issue for the alert raised by one audit event, or retries a failed one.
+// 201 when an issue was created now, 200 when it already existed, 502 when GitHub failed
+// (the alert stays "failed" with lastError, ready for another retry).
+async function createGithubIssue(req, res) {
+  const auditId = schema.parseAuditId(req.params.auditId);
+  const alert = await github.findAlertForEvent(req.user.teamId, auditId);
+  if (!alert) throw Object.assign(new Error('No alert for that audit event.'), { status: 404, code: 'NOT_FOUND' });
+  if (alert.status === 'sent') return res.status(200).json(github.toApi(alert));
+
+  let sent;
+  let failure;
+  try {
+    sent = await github.deliver(alert.id);
+  } catch (err) {
+    failure = err;
+  }
+  // The request is an Admin write, so it is audited whatever GitHub answered.
+  await audit.record(pool, req, {
+    action: 'alert.issue_requested', targetType: 'alert', targetId: alert.id,
+    details: { rule: alert.rule, status: failure ? 'failed' : (sent ? 'sent' : 'sending') },
+  });
+  if (failure) throw failure;
+  if (!sent) throw conflict('This alert is being sent right now. Reload in a moment.');
+  res.status(201).json(github.toApi(sent));
+}
+
+module.exports = {
+  listAudit, auditSummary, exportAudit, monitoring, getAlertRules, putAlertRules,
+  listAlerts, createGithubIssue,
+};

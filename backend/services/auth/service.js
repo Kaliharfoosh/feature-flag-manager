@@ -10,6 +10,7 @@ const dummyHash = '$2b$12$k6p2r9HGujZ3IIuNYFkim.hMAb6PpFfpes7tmai19kx.niIpbrjr6'
 async function authenticate({ email, password, ip, requestId }) {
   const emailHash = createHash('sha256').update(email).digest('hex');
   const client = await pool.connect();
+  const auditReq = { id: requestId, ip }; // who/where for audit.record(); no user yet
 
   let rollbackError;
   try {
@@ -56,7 +57,7 @@ async function authenticate({ email, password, ip, requestId }) {
       // Store only a known team and the source IP. The submitted email and
       // password never go into the audit record. audit.record() also checks the
       // login_failures alert rule, in this same transaction.
-      await audit.record(client, { id: requestId, ip }, {
+      await audit.record(client, auditReq, {
         category: 'security',
         action: 'login.failed',
         teamId: account?.teamId ?? null,
@@ -65,7 +66,8 @@ async function authenticate({ email, password, ip, requestId }) {
     }
 
     await client.query('COMMIT');
-    return { user, rateLimited: limit.blocked };
+    // Alerts raised by this attempt (login_failures); the controller sends them to GitHub.
+    return { user, rateLimited: limit.blocked, pendingAlerts: auditReq.pendingAlerts ?? [] };
   } catch (error) {
     try {
       await client.query('ROLLBACK');

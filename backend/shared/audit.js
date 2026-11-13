@@ -17,6 +17,7 @@
 //   await client.query('COMMIT');
 const { pool } = require('../db/pool');
 const alerts = require('../services/audit-alerts/alerts');
+const github = require('../services/audit-alerts/github');
 
 const CATEGORIES = ['change', 'security'];
 const ACTION_PATTERN = /^[a-z][a-z_]*(\.[a-z][a-z_]*)+$/; // flag.toggled, alert_rules.updated
@@ -136,12 +137,15 @@ function insert(db, row) {
 // Writes one audit row on the caller's transaction client, plus an alert if a rule matches
 // (see services/audit-alerts/alerts.js). Throws if either insert fails, so the caller's
 // transaction rolls back: no change is ever saved without its audit row.
+// A new alert's id is added to req.pendingAlerts; after COMMIT the caller runs
+// `await github.deliverPending(req)` to open its GitHub issue (services/audit-alerts/github.js).
 async function record(tx, req, event) {
   if (!tx || typeof tx.query !== 'function') throw new TypeError('record() needs the transaction client');
   const row = buildRow(req, event);
   const { rows } = await insert(tx, row);
   const id = Number(rows[0].id);
   const alert = await alerts.raiseFor(tx, row, id);
+  if (alert && req && typeof req === 'object') (req.pendingAlerts ??= []).push(alert.id);
   return { id, at: rows[0].at, alert };
 }
 
@@ -154,6 +158,8 @@ async function recordSecurity(req, action, details = {}, { teamId, db = pool } =
     const { rows } = await insert(db, row);
     const id = Number(rows[0].id);
     const alert = await alerts.raiseFor(db, row, id);
+    // No transaction here, so the alert is already saved: send it now (deliverPending never throws).
+    if (alert) await github.deliverPending({ pendingAlerts: [alert.id], log: req && req.log }, { db });
     return { id, at: rows[0].at, alert };
   } catch (err) {
     ((req && req.log) || console).error({ err, action }, 'audit: security event not recorded');
