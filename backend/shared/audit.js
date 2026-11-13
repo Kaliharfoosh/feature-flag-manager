@@ -35,7 +35,7 @@ const ALLOWED_DETAIL_KEYS = new Set([
   // alert rules
   'rule', 'rules',
   // security events
-  'reason', 'method', 'path', 'status', 'requiredRole', 'count',
+  'reason', 'method', 'path', 'status', 'requiredRole', 'count', 'rateLimited',
 ]);
 
 // Belt and braces: a raw API key is redacted wherever it appears, even under an allowed name

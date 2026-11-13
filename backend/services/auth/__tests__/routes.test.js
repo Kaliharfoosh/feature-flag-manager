@@ -42,6 +42,12 @@ beforeEach(() => {
     if (sql.includes('lower(email)') && value === user.email) {
       return { rows: [{ ...user, passwordHash }] };
     }
+    if (sql.includes('INSERT INTO audit_events')) {
+      return { rows: [{ id: '1', at: new Date() }] };
+    }
+    if (sql.includes('AS failures')) { // login_failures alert rule: below the threshold
+      return { rows: [{ failures: 1, already_raised: false }] };
+    }
     return { rows: [] };
   });
 });
@@ -123,9 +129,12 @@ test('audits failed and throttled sign-ins without storing the submitted credent
   expect(attemptSql).toContain('email_hash');
   expect(emailHash).toMatch(/^[a-f0-9]{64}$/);
   expect(success).toBe(false);
-  const [auditSql, auditArgs] = calls.find(([sql]) => sql.includes('INSERT INTO audit_events'));
-  expect(auditSql).toContain("'security', 'login.failed'");
-  expect(auditArgs).toEqual([user.teamId, denied.headers['x-request-id'], ip, { rateLimited: false }]);
+  // audit_events columns: team_id, actor_id, actor_label, category, action, target_type,
+  // target_id, details, request_id, ip (see shared/audit.js)
+  const [, auditArgs] = calls.find(([sql]) => sql.includes('INSERT INTO audit_events'));
+  expect(auditArgs).toEqual([user.teamId, null, 'anonymous', 'security', 'login.failed', null, null,
+    JSON.stringify({ rateLimited: false }), denied.headers['x-request-id'], ip]);
+  expect(calls.some(([sql]) => sql.includes('AS failures'))).toBe(true); // alert rule checked in the same transaction
   expect(JSON.stringify(calls.filter(([sql]) => sql.includes('INSERT')))).not.toContain(wrongPassword);
 
   transaction.query.mockClear();
@@ -143,7 +152,8 @@ test('audits failed and throttled sign-ins without storing the submitted credent
   expect(blocked.headers['set-cookie']).toBeUndefined();
   expect(transaction.query.mock.calls.some(([sql]) => sql.includes('INSERT INTO login_attempts'))).toBe(false);
   const [, blockedAudit] = transaction.query.mock.calls.find(([sql]) => sql.includes('INSERT INTO audit_events'));
-  expect(blockedAudit).toEqual([user.teamId, blocked.headers['x-request-id'], ip, { rateLimited: true }]);
+  expect(blockedAudit).toEqual([user.teamId, null, 'anonymous', 'security', 'login.failed', null, null,
+    JSON.stringify({ rateLimited: true }), blocked.headers['x-request-id'], ip]);
   expect(transaction.query).toHaveBeenLastCalledWith('COMMIT');
 });
 

@@ -47,7 +47,7 @@ describe('parseAuditList', () => {
     [{ cursor: 'not-a-cursor' }, /cursor/],
     [{ cursor: schema.encodeCursor('1 OR 1=1') }, /cursor/],
     [{ actor: 'a'.repeat(300) }, /actor/],
-    [{ team_id: 'someone-elses-team' }, /Unknown query parameter: team_id/], // no mass assignment
+    [{ team_id: 'someone-elses-team' }, /Unknown parameter: team_id/], // no mass assignment
   ])('rejects %j', (query, message) => {
     expect400(() => schema.parseAuditList(query), message);
   });
@@ -55,7 +55,7 @@ describe('parseAuditList', () => {
 
 describe('parseAuditExport', () => {
   test('has no paging parameters', () => {
-    expect400(() => schema.parseAuditExport({ limit: '10' }), /Unknown query parameter/);
+    expect400(() => schema.parseAuditExport({ limit: '10' }), /Unknown parameter/);
     expect(schema.parseAuditExport({ category: 'security' })).toEqual({ category: 'security' });
   });
 });

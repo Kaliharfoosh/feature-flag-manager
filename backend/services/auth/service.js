@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const { createHash } = require('node:crypto');
 const { pool } = require('../../db/pool');
+const audit = require('../../shared/audit');
 
 const userFields = 'id, email, name, role, team_id AS "teamId"';
 // Match the bcrypt cost used by the seed for unknown email addresses.
@@ -53,12 +54,14 @@ async function authenticate({ email, password, ip, requestId }) {
 
     if (!user) {
       // Store only a known team and the source IP. The submitted email and
-      // password never go into the audit record.
-      await client.query(
-        `INSERT INTO audit_events (team_id, actor_label, category, action, request_id, ip, details)
-         VALUES ($1, 'anonymous', 'security', 'login.failed', $2, $3, $4)`,
-        [account?.teamId ?? null, requestId, ip, { rateLimited: limit.blocked }],
-      );
+      // password never go into the audit record. audit.record() also checks the
+      // login_failures alert rule, in this same transaction.
+      await audit.record(client, { id: requestId, ip }, {
+        category: 'security',
+        action: 'login.failed',
+        teamId: account?.teamId ?? null,
+        details: { rateLimited: limit.blocked },
+      });
     }
 
     await client.query('COMMIT');

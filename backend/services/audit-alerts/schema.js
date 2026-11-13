@@ -65,7 +65,7 @@ function parse(schema, query) {
     const issue = result.error.issues[0];
     const field = issue.path.length ? issue.path.join('.') : 'query';
     throw validationError(issue.code === 'unrecognized_keys'
-      ? `Unknown query parameter: ${issue.keys.join(', ')}.`
+      ? `Unknown parameter: ${issue.keys.join(', ')}.`
       : `${field} ${issue.message}.`);
   }
   const value = result.data;
@@ -73,13 +73,23 @@ function parse(schema, query) {
   return value;
 }
 
-const encodeCursor = (id) => Buffer.from(String(id), 'utf8').toString('base64url');
+// PUT /alert-rules body: { rules: [{ rule, enabled }] }, each rule at most once.
+const alertRulesSchema = z.object({
+  rules: z.array(z.object({
+    rule: z.enum(['prod_change', 'key_change', 'login_failures']),
+    enabled: z.boolean(),
+  }).strict()).min(1).max(3)
+    .refine((rules) => new Set(rules.map((r) => r.rule)).size === rules.length, 'must not repeat a rule'),
+}).strict();
+
+const encodeCursor =(id) => Buffer.from(String(id), 'utf8').toString('base64url');
 
 module.exports = {
   parseAuditList: (q) => parse(auditListSchema, q),
   parseAuditExport: (q) => parse(auditExportSchema, q),
   parseSummary: (q) => parse(summarySchema, q),
   parseMonitoring: (q) => parse(monitoringSchema, q),
+  parseAlertRules: (body) => parse(alertRulesSchema, body),
   encodeCursor,
   validationError,
 };

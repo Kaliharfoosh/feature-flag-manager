@@ -2,8 +2,10 @@
 // Express error handler; it is registered last in app.js.
 // Controllers never build error JSON themselves: they throw an Error with .status and .code
 // (for example 401 UNAUTHENTICATED, 404 NOT_FOUND, 409 STALE_VERSION) and this file formats it.
+const audit = require('../shared/audit');
+
 // eslint-disable-next-line no-unused-vars
-module.exports = (err, req, res, next) => {
+module.exports =(err, req, res, next) => {
   const requestId = req.id;
 
   if (err.type === 'entity.parse.failed') {
@@ -17,6 +19,9 @@ module.exports = (err, req, res, next) => {
   }
 
   // Anything else is a bug or an outage: full details go to the log only, never to the client.
+  // A server.error security event feeds the 5xx count on the monitoring card. It is not awaited
+  // and recordSecurity never throws for a database failure, so the 500 always goes out.
   (req.log || console).error({ err }, 'unhandled error');
+  audit.recordSecurity(req, 'server.error', { method: req.method, path: req.originalUrl.split('?')[0] });
   res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'An unexpected server error occurred.', requestId } });
 };
