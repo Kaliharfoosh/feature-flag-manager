@@ -1,0 +1,306 @@
+.flags-view {
+  width: min(100%, 68rem);
+  margin-inline: auto;
+}
+
+.flags-intro {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: clamp(1.6rem, 5vw, 3.15rem);
+  border-radius: 1rem;
+  background: linear-gradient(112deg, #251747, #402671 74%, #533689);
+  color: #fff;
+}
+
+.flags-intro::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: -8rem -3rem auto auto;
+  width: 26rem;
+  height: 26rem;
+  border-radius: 50%;
+  background: repeating-radial-gradient(circle, transparent 0 1.35rem, #e0c5ff24 1.4rem 1.45rem);
+  pointer-events: none;
+  mask-image: linear-gradient(to right, transparent, black 40%);
+}
+
+.flags-intro h1 {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 3.3rem);
+  letter-spacing: -.055em;
+  line-height: 1.12;
+}
+
+.flags-intro p {
+  margin: .75rem 0 0;
+  color: #ebe2fa;
+}
+
+.flags-card {
+  margin-top: 1.5rem;
+  background: #fff;
+  border: 1px solid #e0dfeb;
+  border-radius: 1rem;
+  box-shadow: 0 10px 30px #24264d0a;
+}
+
+.flags-toolbar, .flags-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: .9rem;
+  padding: 1rem 1.25rem;
+}
+
+.flags-toolbar { border-bottom: 1px solid #e8e6ef; }
+
+.flag-filters {
+  display: flex;
+  gap: .2rem;
+  padding: .2rem;
+  background: #f3effa;
+  border-radius: .6rem;
+}
+
+.flag-filters button, .flag-button {
+  min-height: 2.5rem;
+  padding: .35rem .8rem;
+  border: 1px solid transparent;
+  border-radius: .45rem;
+  background: transparent;
+  color: #493a67;
+  font-size: .875rem;
+  font-weight: 650;
+}
+
+.flag-filters button[aria-pressed='true'] {
+  background: #fff;
+  border-color: #e4dbf4;
+  color: #4b2d86;
+  box-shadow: 0 1px 2px #38205814;
+}
+
+.flag-button {
+  background: #fff;
+  border-color: #d9d2e7;
+}
+
+.flag-button:hover:enabled { background: #f4effb; }
+
+.flag-button:disabled { cursor: default; }
+
+.flag-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+  margin: 0;
+}
+
+.flag-search input {
+  width: min(100%, 16rem);
+  min-height: 2.5rem;
+  margin: 0;
+  border-color: #a7a1b7;
+  font-size: .875rem;
+}
+
+.flags-table-scroll { overflow-x: auto; }
+
+.flags-table-scroll:focus-visible { outline-offset: -3px; }
+
+.flags-table {
+  width: 100%;
+  min-width: 37rem;
+  border-collapse: collapse;
+  text-align: left;
+  table-layout: fixed;
+}
+
+.flags-table thead th {
+  padding: .85rem 1.25rem;
+  background: #f8f7fb;
+  color: #534966;
+  font-size: .8rem;
+  font-weight: 650;
+}
+
+.flags-table thead th:first-child { width: 40%; }
+
+.flags-table tbody th, .flags-table td {
+  padding: 1.2rem 1.25rem;
+  border-top: 1px solid #edeaf2;
+  vertical-align: middle;
+}
+
+.flags-table tbody th { font-weight: 400; }
+
+.flags-table tbody tr:hover { background: #fcfaff; }
+
+.flag-name {
+  display: block;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.flag-state {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .16rem .55rem;
+  border-radius: 1rem;
+  background: #eeedf2;
+  color: #514e60;
+  font-size: .8rem;
+  font-weight: 700;
+}
+
+.flag-state::before {
+  content: '';
+  width: .4rem;
+  height: .4rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.flag-state-on {
+  background: #e2f5eb;
+  color: #146248;
+}
+
+.flags-footer { color: #585469; font-size: .83rem; }
+
+.flags-footer { border-top: 1px solid #e8e6ef; overflow-wrap: anywhere; }
+
+.flags-footer p, .flags-message p { margin: 0; }
+
+.flag-pagination { display: flex; gap: .75rem; align-items: center; }
+
+.flags-message {
+  margin: 0;
+  padding: 2rem 1.25rem;
+  text-align: center;
+  color: #585469;
+}
+
+.flags-message button { margin-top: .75rem; }
+
+@media (max-width: 42rem) {
+  .flag-search { width: 100%; }
+  .flag-search input { flex: 1 1 8rem; width: auto; min-width: 0; }
+  .flags-intro::after { opacity: .45; }
+}
+
+
+
+.flag-name {
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #4b2d86;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: #b6a3da;
+  text-underline-offset: .22em;
+}
+
+.flag-name:hover { text-decoration-color: currentColor; }
+
+.rollout-dialog {
+  width: min(calc(100% - 2rem), 34rem);
+  max-height: calc(100% - 2rem);
+  padding: clamp(1.15rem, 5vw, 2rem);
+  border: 1px solid #e0dfeb;
+  border-radius: 1rem;
+  color: #20243a;
+  background: #fff;
+  box-shadow: 0 20px 70px #2517473d;
+}
+
+.rollout-dialog[open] { animation: rollout-enter 220ms ease-out both; }
+
+.rollout-dialog::backdrop { background: #21183199; }
+
+.rollout-heading, .rollout-chart-label, .rollout-scale {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+}
+
+.rollout-heading { justify-content: space-between; align-items: start; }
+
+.rollout-heading h2 {
+  margin: .2rem 0 0;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.rollout-heading code { color: #5b3e89; overflow-wrap: anywhere; }
+
+.rollout-description {
+  margin: .85rem 0 0;
+  color: #585469;
+  overflow-wrap: anywhere;
+}
+
+.rollout-chart {
+  margin: 1.5rem 0 0;
+  padding: 1rem;
+  border-radius: .75rem;
+  background: #f8f6fc;
+}
+
+.rollout-chart figcaption { color: #585469; font-size: .875rem; }
+
+.rollout-chart-row { margin-top: 1rem; }
+
+.rollout-chart-label { font-size: .875rem; }
+
+.rollout-chart-value { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+.rollout-chart-row svg {
+  display: block;
+  width: 100%;
+  height: .6rem;
+  margin-top: .4rem;
+  border-radius: 1rem;
+}
+
+.rollout-track { fill: #e7e0f2; }
+
+.rollout-fill {
+  fill: #6744b3;
+  transform-origin: left center;
+  animation: rollout-grow 550ms cubic-bezier(.2, .65, .3, 1) both;
+}
+
+.rollout-fill-off { fill: #79728a; }
+
+.rollout-chart-row:nth-of-type(2) .rollout-fill { animation-delay: 65ms; }
+
+.rollout-chart-row:nth-of-type(3) .rollout-fill { animation-delay: 130ms; }
+
+.rollout-scale {
+  justify-content: space-between;
+  margin-top: .6rem;
+  color: #585469;
+  font-size: .75rem;
+}
+
+@keyframes rollout-enter {
+  from { opacity: 0; transform: translateY(.45rem); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes rollout-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rollout-dialog[open], .rollout-fill { animation: none; }
+}
