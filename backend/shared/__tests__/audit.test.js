@@ -97,7 +97,7 @@ describe('record', () => {
       action: 'rollout.updated', targetType: 'rollout', targetId: 'f1/staging',
       before: { percentage: 0 }, after: { percentage: 25 },
     });
-    expect(result).toEqual({ id: 42, at: new Date('2026-11-13T14:05:00Z') });
+    expect(result).toEqual({ id: 42, at: new Date('2026-11-13T14:05:00Z'), alert: null }); // staging: no rule
     expect(tx.query).toHaveBeenCalledTimes(1);
     const [sql, params] = tx.query.mock.calls[0];
     expect(sql).toMatch(/INSERT INTO audit_events/);

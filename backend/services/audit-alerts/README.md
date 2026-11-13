@@ -1,2 +1,2 @@
-Audit and Monitoring (S3, Ebrahim): `routes.js` (method + path), `controller.js` (validate, status codes), `query.js`, `monitoring.js`, `github.js` (data and integration, no HTTP), `__tests__/`.
+Audit and Monitoring (S3, Ebrahim): `routes.js` (method + path), `controller.js` (validate, status codes), `schema.js` (query-string validation), `query.js` (SQL for audit, summary, monitoring), `csv.js` (export with formula-injection protection), `alerts.js` (alert rules, called by `shared/audit.js`), `github.js` (data and integration, no HTTP), `__tests__/`.
 Endpoints: /audit, /audit/summary, /audit/export.csv, /monitoring, /alert-rules, /alerts/:auditId/github-issue.

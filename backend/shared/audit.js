@@ -16,6 +16,7 @@
 //   });
 //   await client.query('COMMIT');
 const { pool } = require('../db/pool');
+const alerts = require('../services/audit-alerts/alerts');
 
 const CATEGORIES = ['change', 'security'];
 const ACTION_PATTERN = /^[a-z][a-z_]*(\.[a-z][a-z_]*)+$/; // flag.toggled, alert_rules.updated
@@ -132,13 +133,16 @@ function insert(db, row) {
   ]);
 }
 
-// Writes one audit row on the caller's transaction client. Throws if the insert fails,
-// so the caller's transaction rolls back: no change is ever saved without its audit row.
+// Writes one audit row on the caller's transaction client, plus an alert if a rule matches
+// (see services/audit-alerts/alerts.js). Throws if either insert fails, so the caller's
+// transaction rolls back: no change is ever saved without its audit row.
 async function record(tx, req, event) {
   if (!tx || typeof tx.query !== 'function') throw new TypeError('record() needs the transaction client');
   const row = buildRow(req, event);
   const { rows } = await insert(tx, row);
-  return { id: Number(rows[0].id), at: rows[0].at };
+  const id = Number(rows[0].id);
+  const alert = await alerts.raiseFor(tx, row, id);
+  return { id, at: rows[0].at, alert };
 }
 
 // Security events (login.failed, access.denied, rate_limit.hit). Best effort: a logging failure
@@ -148,7 +152,9 @@ async function recordSecurity(req, action, details = {}, { teamId, db = pool } =
   const row = buildRow(req, { category: 'security', action, details, teamId });
   try {
     const { rows } = await insert(db, row);
-    return { id: Number(rows[0].id), at: rows[0].at };
+    const id = Number(rows[0].id);
+    const alert = await alerts.raiseFor(db, row, id);
+    return { id, at: rows[0].at, alert };
   } catch (err) {
     ((req && req.log) || console).error({ err, action }, 'audit: security event not recorded');
     return null;
