@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
 import { getSession, signIn, signOut } from './auth/api.js'
+import { NavLink, useLocation } from 'react-router-dom'
 import LoginForm from './auth/LoginForm.jsx'
+import FlagsPage from './flags/FlagsPage.jsx'
 import './App.css'
 
 function App() {
+  const accountView = useLocation().pathname === '/account'
   const [session, setSession] = useState(undefined)
   const [sessionError, setSessionError] = useState('')
   const [sessionCheck, setSessionCheck] = useState(0)
@@ -69,20 +72,26 @@ function App() {
   return (
     <>
       <header className="app-header">
-        <div className="header-content">
+        <div className={session ? "header-content signed-in-header" : "header-content"}>
           <div className="brand">
             <span className="brand-mark" aria-hidden="true" />
             Feature Flag Manager
           </div>
           {session && (
-            <button className="secondary" type="button" onClick={handleSignOut} disabled={signingOut}>
-              {signingOut ? 'Signing out…' : 'Sign out'}
-            </button>
+            <>
+              <nav className="workspace-nav" aria-label="Workspace">
+                <NavLink to="/" end>Flags</NavLink>
+                <NavLink to="/account">Account</NavLink>
+              </nav>
+              <button className="secondary" type="button" onClick={handleSignOut} disabled={signingOut}>
+                {signingOut ? 'Signing out…' : 'Sign out'}
+              </button>
+            </>
           )}
         </div>
       </header>
 
-      <main className="page">
+      <main className={session && !accountView ? "workspace-page" : "page"}>
         {session === undefined && (
           <section className="panel" aria-label="Session status">
             {sessionError ? (
@@ -99,7 +108,9 @@ function App() {
 
         {session === null && <LoginForm onSignIn={handleSignIn} />}
 
-        {session && (
+        {session && logoutError && <p className="workspace-error" role="alert">{logoutError}</p>}
+        {session && !accountView && <FlagsPage key={session.user.teamId} />}
+        {session && accountView && (
           <section className="panel" aria-labelledby="account-heading">
             <h1 id="account-heading">Your account</h1>
             <dl className="account-details">
@@ -107,7 +118,6 @@ function App() {
               <div><dt>Email</dt><dd>{session.user.email}</dd></div>
               <div><dt>Role</dt><dd className="account-role">{session.user.role}</dd></div>
             </dl>
-            {logoutError && <p className="error" role="alert">{logoutError}</p>}
           </section>
         )}
       </main>

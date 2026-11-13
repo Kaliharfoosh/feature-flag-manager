@@ -145,3 +145,43 @@ input {
 }
 
 .account-role { text-transform: capitalize; }
+
+.workspace-nav {
+  display: flex;
+  gap: .25rem;
+  margin-right: auto;
+}
+
+.workspace-nav a {
+  padding: .55rem .8rem;
+  border-radius: .5rem;
+  color: #524864;
+  text-decoration: none;
+  font-size: .9rem;
+  font-weight: 650;
+}
+
+.workspace-nav a:hover,
+.workspace-nav a[aria-current='page'] {
+  color: #4b2d86;
+  background: #f0eafa;
+}
+
+.workspace-page { padding: clamp(1.5rem, 4vw, 3rem) 1rem 3rem; }
+
+.workspace-error {
+  width: min(100%, 68rem);
+  margin: 0 auto 1rem;
+  padding: .7rem 1rem;
+  border: 1px solid #f5c4cc;
+  border-radius: .5rem;
+  color: #902633;
+  background: #fff0f2;
+}
+
+@media (max-width: 34rem) {
+  .signed-in-header { flex-wrap: wrap; gap: .45rem .65rem; }
+  .signed-in-header .brand { flex: 1; font-size: .9rem; }
+  .signed-in-header .secondary { font-size: .875rem; }
+  .signed-in-header .workspace-nav { flex-basis: 100%; order: 1; }
+}
