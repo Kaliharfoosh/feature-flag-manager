@@ -1,0 +1,80 @@
+# CI: runs on every pull request and on every push to main.
+# Job "test":    installs everything, builds a throwaway Postgres, runs the migrations,
+#                runs the Jest tests as the least-privilege ffm_app role, checks for
+#                vulnerable packages, and builds the frontend.
+# Job "secrets": scans the whole git history for leaked passwords or keys (gitleaks).
+# No real secrets are used here: the database exists only for this run and is thrown away.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read # the workflow's token can only read the repo
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ffm_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-retries 10
+    env:
+      # owner account: only used to create tables (like DATABASE_URL_MIGRATE on your machine)
+      DATABASE_URL_MIGRATE: postgres://postgres:postgres@localhost:5432/ffm_test
+      # tests run as ffm_app, so the database grants are tested too
+      DATABASE_URL: postgres://ffm_app:ci-only@localhost:5432/ffm_test
+      SESSION_SECRET: ci-only-value
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - name: Install backend packages
+        run: npm ci
+
+      - name: Install frontend packages
+        run: npm --prefix frontend ci
+
+      - name: Create the ffm_app database role
+        run: psql "$DATABASE_URL_MIGRATE" -c "CREATE ROLE ffm_app LOGIN PASSWORD 'ci-only'"
+
+      - name: Run migrations (and grants.sql)
+        run: node backend/db/migrate.js
+
+      - name: Run tests
+        run: npm test
+
+      - name: Check packages for known vulnerabilities
+        run: |
+          npm audit --audit-level=high
+          npm --prefix frontend audit --audit-level=high
+
+      - name: Build the frontend
+        run: npm --prefix frontend run build
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history, so old commits are scanned too
+
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
