@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import './FlagsPage.css'
+import { API_BASE, CREDENTIALS } from '../apiBase'
 
 const environments = [
   ['dev', 'Development'],
@@ -62,7 +63,7 @@ async function fetchFlags(filters, signal) {
   if (filters.q) params.set('q', filters.q)
   const cursor = filters.cursors.at(-1)
   if (cursor) params.set('cursor', cursor)
-  const response = await fetch(`/api/v1/flags?${params}`, { signal })
+  const response = await fetch(`${API_BASE}/api/v1/flags?${params}`, { signal, credentials: CREDENTIALS })
 
   if (response.status === 401) {
     throw new Error('Your session has expired. Refresh the page to sign in again.')
