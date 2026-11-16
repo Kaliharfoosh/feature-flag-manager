@@ -1,0 +1,31 @@
+# Floci: a free copy of AWS that runs on your laptop (https://floci.io)  - same file as Lab 7
+#   Start:    docker compose -f infra/floci/docker-compose.yml up -d
+#   Console:  http://localhost:4566/_floci/ui   (Floci Dash, looks like the AWS Console)
+#   Stop:     docker compose -f infra/floci/docker-compose.yml down   (your data is kept)
+# Vercel stays our real deployment. Floci runs the SAME backend the AWS way (Lambda + IAM),
+# only on your own PC.
+name: ffm-floci
+
+services:
+  floci:
+    image: floci/floci:latest
+    container_name: floci
+    ports:
+      - "127.0.0.1:4566:4566"                  # only your own PC can reach Floci
+    environment:
+      FLOCI_HOSTNAME: floci
+      FLOCI_STORAGE_MODE: persistent           # keep the role, secret and function after a restart
+      FLOCI_STORAGE_PERSISTENT_PATH: /app/data
+      FLOCI_SERVICES_UI_BIND_ADDRESS: "127.0.0.1"
+      # Use Floci Dash (AWS-Console style) as the web console
+      FLOCI_BASE_URL: http://floci:4566
+      FLOCI_SERVICES_UI_IMAGE: ghcr.io/ofsazib/floci-dash:latest
+      FLOCI_SERVICES_UI_CONTAINER_NAME: floci-dash
+      FLOCI_SERVICES_UI_ENDPOINT_ENV: FLOCI_URL
+      FLOCI_SERVICES_UI_STATUS_PATH: /api/healthz
+    volumes:
+      - floci-data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock   # lets Floci run Lambda functions
+
+volumes:
+  floci-data:

@@ -8,7 +8,8 @@
     "dev:web": "npm --prefix frontend run dev",
     "migrate": "node --env-file=.env backend/db/migrate.js",
     "seed": "node --env-file=.env backend/db/seed.js",
-    "test": "jest --runInBand"
+    "test": "jest --runInBand",
+    "build:lambda": "node infra/floci/build-lambda.js"
   },
   "repository": {
     "type": "git",
@@ -23,6 +24,7 @@
   },
   "homepage": "https://github.com/Kaliharfoosh/feature-flag-manager#readme",
   "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.1169.0",
     "bcryptjs": "^3.0.3",
     "connect-pg-simple": "^10.0.0",
     "csrf-sync": "^4.2.1",
@@ -31,6 +33,7 @@
     "helmet": "^8.3.0",
     "pg": "^8.23.1",
     "pino": "^10.4.0",
+    "serverless-http": "^4.0.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
