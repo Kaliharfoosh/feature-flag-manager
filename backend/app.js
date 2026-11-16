@@ -8,6 +8,16 @@ const { pool } = require('./db/pool');
 
 const app = express();
 app.use(helmet());
+
+// Lab 5/7: CORS. Only switched on where the frontend lives on a different address
+// (Floci: the S3 website). Allowed origins come from CORS_ORIGINS (comma-separated).
+// On Vercel CORS_ORIGINS is not set: frontend and API share one address, so no CORS is needed
+// and every other site stays blocked by the browser.
+if (process.env.CORS_ORIGINS) {
+  const cors = require('cors');
+  const allowedOrigins = process.env.CORS_ORIGINS.split(',').map((origin) => origin.trim());
+  app.use(cors({ origin: allowedOrigins, credentials: true })); // credentials: the login cookie
+}
 app.use(require('./middleware/request-logger')); // time, method, path, requestId: never the body
 app.use(require('./middleware/require-json'));   // 415 when a body is not JSON (Lab 4)
 app.use(express.json({ limit: '10kb' }));

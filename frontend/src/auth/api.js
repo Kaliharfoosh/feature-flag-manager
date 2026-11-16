@@ -1,8 +1,10 @@
+import { API_BASE, CREDENTIALS } from '../apiBase'
+
 async function authRequest(path, options) {
   let response
   try {
-    response = await fetch(`/api/v1/auth/${path}`, {
-      credentials: 'same-origin',
+    response = await fetch(`${API_BASE}/api/v1/auth/${path}`, {
+      credentials: CREDENTIALS,
       ...options,
     })
   } catch (error) {
