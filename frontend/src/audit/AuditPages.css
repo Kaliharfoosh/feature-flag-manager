@@ -1,0 +1,261 @@
+/* Audit log and Monitoring pages (S3). Reuses the flags page look (flags-intro, flags-card,
+   flags-toolbar, flags-table, flag-button, flag-filters). Everything is scoped under .audit-view
+   so the global form/input/label styles from App.css (made for the sign-in form) do not leak in. */
+
+.audit-view {
+  --series-1: #2a78d6;   /* categorical slots 1-3, validated: CVD and normal-vision separation pass */
+  --series-2: #eb6834;
+  --series-3: #1baf7a;   /* below 3:1 on white, so the chart also has a table view */
+  --ink-2: #585469;
+  --line: #e8e6ef;
+  display: grid;
+  gap: 1.5rem;
+}
+
+/* Grid children may shrink below their content, so a wide table scrolls inside its card
+   instead of pushing the whole page past the screen edge on a phone. */
+.audit-view > * { min-width: 0; }
+.audit-view .flags-card { margin-top: 0; }
+.audit-view form { margin-top: 0; }
+.audit-view label { margin: 0; }
+.audit-view input, .audit-view select { margin: 0; }
+.audit-view button:disabled { cursor: not-allowed; }
+
+.audit-heading { margin: 0; font-size: 1.05rem; letter-spacing: -.02em; }
+.audit-hint, .audit-meta { margin: 0; color: var(--ink-2); font-size: .83rem; }
+.audit-meta { display: block; margin-top: .15rem; }
+.audit-ok { margin: 0; color: #146248; font-size: .85rem; }
+
+/* ---- stat tiles ---- */
+.stat-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(9.5rem, 100%), 1fr));
+  gap: 1px;
+  margin: 0;
+  background: var(--line);
+}
+.stat-tile { padding: 1rem 1.25rem; background: #fff; }
+.stat-tile dt { color: var(--ink-2); font-size: .8rem; font-weight: 650; }
+.stat-tile dd {
+  margin: .2rem 0 0;
+  font-size: 1.9rem;
+  font-weight: 750;
+  letter-spacing: -.04em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+/* ---- filters ---- */
+.audit-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(10rem, 100%), 1fr));
+  gap: .75rem;
+  align-items: end;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+.audit-filters label {
+  display: grid;
+  gap: .3rem;
+  color: #534966;
+  font-size: .8rem;
+  font-weight: 650;
+}
+.audit-filters input, .audit-filters select {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: .35rem .6rem;
+  border: 1px solid #a7a1b7;
+  border-radius: .45rem;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  font-size: .875rem;
+}
+.audit-filter-actions { display: flex; gap: .5rem; }
+.audit-apply:enabled { background: #5943c4; border-color: #5943c4; color: #fff; }
+.audit-apply:hover:enabled { background: #4833a7; }
+
+/* ---- event table ---- */
+.audit-table { min-width: 52rem; table-layout: auto; }
+.audit-table thead th:first-child { width: auto; }
+.audit-table td { padding: .85rem 1.25rem; vertical-align: top; font-size: .875rem; }
+.audit-when { white-space: nowrap; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.audit-actor, .audit-target { overflow-wrap: anywhere; }
+.audit-action { color: #4b2d86; font-weight: 650; }
+.audit-target code { color: #5b3e89; }
+
+.audit-badge {
+  display: inline-block;
+  margin-left: .4rem;
+  padding: .05rem .5rem;
+  border-radius: 1rem;
+  background: #eeedf2;
+  color: #514e60;
+  font-size: .75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.audit-badge-security { background: #fdecea; color: #8f2a22; }
+
+.audit-changes { margin: 0 0 .3rem; padding-left: 1rem; }
+.audit-changes li { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+.audit-raw summary { color: #4b2d86; font-size: .8rem; font-weight: 650; cursor: pointer; }
+.audit-raw pre {
+  max-width: 28rem;
+  margin: .4rem 0;
+  padding: .6rem .75rem;
+  overflow-x: auto;
+  border-radius: .45rem;
+  background: #f8f7fb;
+  font-size: .78rem;
+}
+.audit-raw p { margin: 0; color: var(--ink-2); font-size: .78rem; overflow-wrap: anywhere; }
+
+/* ---- monitoring: chart + top IPs ---- */
+.monitoring-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) minmax(12rem, 1fr);
+  gap: 1.5rem;
+  padding: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+@media (max-width: 50rem) { .monitoring-grid { grid-template-columns: 1fr; } }
+
+.hour-chart { margin: 0; min-width: 0; }
+.hour-chart figcaption { font-weight: 650; }
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem 1rem;
+  margin: .5rem 0 .75rem;
+  padding: 0;
+  list-style: none;
+  color: var(--ink-2);
+  font-size: .8rem;
+}
+.chart-legend li { display: flex; align-items: center; gap: .35rem; }
+.swatch { display: inline-block; width: .7rem; height: .7rem; border-radius: .2rem; flex-shrink: 0; }
+.series-1 { background: var(--series-1); }
+.series-2 { background: var(--series-2); }
+.series-3 { background: var(--series-3); }
+
+.hour-chart-plot {
+  position: relative;
+  height: 10rem;
+  padding-top: .9rem;
+  border-bottom: 1px solid #c9c4d6;
+  background: linear-gradient(#eeecf3, #eeecf3) top .9rem left / 100% 1px no-repeat;   /* gridline at max */
+}
+.hour-chart-max { position: absolute; top: 0; right: 0; color: var(--ink-2); font-size: .72rem; }
+.hour-chart-columns { display: flex; align-items: flex-end; gap: 2px; height: 100%; }
+
+.hour-column {
+  display: flex;
+  flex: 1 1 0;
+  align-items: flex-end;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+.hour-column:hover, .hour-column:focus-visible { background: #f3effa; }
+.hour-stack { display: flex; flex-direction: column-reverse; gap: 2px; width: 100%; }
+.hour-segment { flex-basis: 0; min-height: 2px; }
+.hour-stack > .hour-segment:last-child { border-radius: 4px 4px 0 0; }
+
+.hour-tooltip {
+  position: absolute;
+  bottom: calc(100% + .25rem);
+  z-index: 1;
+  display: grid;
+  gap: .15rem;
+  min-width: 11rem;
+  padding: .55rem .7rem;
+  border: 1px solid #e0dfeb;
+  border-radius: .5rem;
+  background: #fff;
+  box-shadow: 0 8px 24px #24264d1f;
+  font-size: .8rem;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.hour-tooltip > span { display: flex; align-items: center; gap: .4rem; color: var(--ink-2); }
+.hour-tooltip b { margin-left: auto; color: #20243a; font-variant-numeric: tabular-nums; }
+
+.hour-chart-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: .3rem;
+  color: var(--ink-2);
+  font-size: .72rem;
+}
+.hour-chart .audit-raw { margin-top: .75rem; }
+.chart-table { min-width: 24rem; }
+.chart-table tbody th, .chart-table td { padding: .5rem .75rem; font-size: .8rem; }
+
+.top-ips h3 { margin: 0 0 .6rem; font-size: .95rem; }
+.top-ips ol { margin: 0; padding: 0; list-style: none; }
+.top-ips li {
+  display: flex;
+  justify-content: space-between;
+  gap: .75rem;
+  padding: .45rem 0;
+  border-top: 1px solid var(--line);
+  font-size: .875rem;
+}
+.top-ips b { font-variant-numeric: tabular-nums; }
+
+/* ---- alerts ---- */
+.alert-list { margin: 0; padding: 0; list-style: none; }
+.alert-item {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: .75rem 1.25rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--line);
+}
+.alert-list > .alert-item:first-child { border-top: 0; }
+.alert-main { display: grid; gap: .15rem; min-width: 0; flex: 1 1 18rem; font-size: .9rem; overflow-wrap: anywhere; }
+.alert-side { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+.alert-side a { color: #4b2d86; font-weight: 650; font-size: .875rem; }
+.alert-error { color: #902633; font-size: .83rem; }
+.alert-status-sent { background: #e2f5eb; color: #146248; }
+.alert-status-failed { background: #fdecea; color: #8f2a22; }
+.alert-status-open, .alert-status-sending { background: #fff4db; color: #7a5300; }
+
+/* ---- alert rules ---- */
+.rule-form { display: grid; gap: 0; }
+.rule-row {
+  display: flex;
+  gap: .75rem;
+  align-items: flex-start;
+  padding: .9rem 1.25rem;
+  border-top: 1px solid var(--line);
+  font-weight: 400;
+  cursor: pointer;
+}
+.rule-form > .rule-row:first-child { border-top: 0; }
+.audit-view .rule-row input {
+  flex: 0 0 auto;
+  width: 1.1rem;
+  min-height: 0;
+  height: 1.1rem;
+  margin: .2rem 0 0;
+  padding: 0;
+  accent-color: #5943c4;
+}
+.rule-row > span { flex: 1 1 auto; text-align: left; }
+.rule-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .75rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--line);
+}
