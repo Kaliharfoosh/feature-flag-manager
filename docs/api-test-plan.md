@@ -155,9 +155,9 @@ Same IDs as the build plan. Record a screenshot or request id for each row in `e
 | ST-03 | Ownership / other team | Globex user opens an Acme flag id | 404, existence not revealed | S1 | | |
 | ST-04 | Missing CSRF token | `PUT /rollouts/…` without `X-CSRF-Token` | 403 | S1 | | |
 | ST-05 | Invalid input | `PUT /rollouts/…` with `percentage: 150`, then `"abc"` | 400 with field message, row unchanged | S2 | | |
-| ST-06 | Key scope | Staging key, flag enabled only in prod | Evaluates staging: `enabled: false` | S2 | | |
+| ST-06 | Key scope | Staging key, flag on in prod and off in staging; then the same call with `"env": "prod"` added to the body | First call evaluates staging: `enabled: false`. Second call: 400 `Unknown field: env.` | S2 | | |
 | ST-07 | Revoked key | Revoke a key, then `POST /evaluations` with it | 401 | S2 | | |
-| ST-08 | Developer manages keys | Developer: `POST /keys` | 403 | S2 | | |
+| ST-08 | Developer manages keys | Developer: `POST /keys` | 403 | S1 | | |
 | ST-09 | Injection / XSS | `q=' OR 1=1--` and a flag description `<img src=x onerror=alert(1)>` | Treated as text: no extra rows, no script runs in the UI | S1 | | |
 | ST-10 | Audit tampering | As `ffm_app`: `UPDATE audit_events …` | Postgres "permission denied" | S3 | | |
 | ST-11 | Brute-force login | 6+ wrong passwords in a row | 429; failed logins on the monitoring card | S3 | | |

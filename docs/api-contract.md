@@ -64,7 +64,7 @@ from the client; if sent they are ignored.
 | id | uuid | Server | |
 | name | string | Client | 1–60 chars |
 | env | string enum | Client | The only environment this key may evaluate |
-| prefix | string | Server | First 12 chars of the key, e.g. `ffm_staging_`, safe to display |
+| prefix | string | Server | The first 14 characters: `ffm_` + env code (`dev`, `stg`, `prd`) + `_` + 6 random characters, e.g. `ffm_stg_Ab12Cd`. Safe to display |
 | key | string | Server | The full key. Returned **once**, in the `201` response. Only its SHA-256 is stored |
 | createdAt, lastUsedAt, revokedAt | datetime or null | Server | |
 
@@ -289,11 +289,11 @@ A complete flag as returned by the API:
 
 ### POST /evaluations — a client app asks for a flag value
 
-- Who: Scoped key (`Authorization: Bearer ffm_staging_…`). No cookie, no CSRF.
-- Body: `{ "flagKey": "new-checkout", "userId": "u-981" }`
+- Who: Scoped key (`Authorization: Bearer ffm_stg_…`). No cookie, no CSRF.
+- Body: `{ "flagKey": "new-checkout", "userId": "u-981" }`. Only these two fields: the environment always comes from the key, so a body with `env` (or any other field) is a `400` (security test ST-06). A key can never evaluate another environment.
 - `200 OK`: `{ "flagKey": "new-checkout", "env": "staging", "enabled": true }`
-- Errors: `400`, `401 UNAUTHENTICATED` (missing, unknown or revoked key), `403 KEY_SCOPE` (the flag is evaluated in the key's own env; a key never evaluates another env. If a client asks for a flag the team does not own: `404`), `429 RATE_LIMITED` (per key, 120 requests per minute), `503 DB_UNAVAILABLE` (client apps must treat the flag as off).
-- Side effect: `lastUsedAt` is updated. Not audited (it would flood the log); counted on the monitoring page instead.
+- Errors: `400`, `401 UNAUTHENTICATED` (missing, unknown or revoked key; the same answer for all three), `404 NOT_FOUND` (the key's team has no flag with that key), `429 RATE_LIMITED` (per key, 120 requests per minute; the response has a `Retry-After` header in seconds), `503 DB_UNAVAILABLE` (client apps must treat the flag as off).
+- Side effects: `lastUsedAt` is updated at most once a minute per key. Evaluations are not audited (it would flood the log). A revoked key is logged as `access.denied`; the first `429` in a minute is logged as `rate_limit.hit`, which the monitoring page counts.
 
 Evaluation order: archived → `false`; env disabled → `false`; user blocklisted → `false`; user allowlisted → `true`; otherwise `sha256(flagKey + ":" + userId)` mod 10000 < percentage × 100.
 
@@ -303,7 +303,7 @@ Evaluation order: archived → `false`; env disabled → `false`; user blocklist
 - `200 OK`:
 
 ```json
-{ "items": [ { "id": "k1…", "name": "Storefront staging", "env": "staging", "prefix": "ffm_staging_", "createdAt": "…", "lastUsedAt": "…", "revokedAt": null } ] }
+{ "items": [ { "id": "k1…", "name": "Storefront staging", "env": "staging", "prefix": "ffm_stg_Ab12Cd", "createdAt": "…", "lastUsedAt": "…", "revokedAt": null } ] }
 ```
 
 - Errors: `401`, `403 FORBIDDEN` (Developer).
@@ -315,7 +315,7 @@ Evaluation order: archived → `false`; env disabled → `false`; user blocklist
 - `201 Created`:
 
 ```json
-{ "id": "k1…", "name": "Storefront staging", "env": "staging", "prefix": "ffm_staging_", "key": "ffm_staging_Ab12…(shown once)", "createdAt": "…" }
+{ "id": "k1…", "name": "Storefront staging", "env": "staging", "prefix": "ffm_stg_Ab12Cd", "key": "ffm_stg_Ab12Cd…(shown once)", "createdAt": "…" }
 ```
 
 - Errors: `400`, `401`, `403`.
@@ -452,14 +452,13 @@ screenshot of an error can be matched to its log entry.
 | 401 | `UNAUTHENTICATED` | No or expired session cookie; wrong login; missing, unknown or revoked API key |
 | 403 | `FORBIDDEN` | Wrong role: Developer on prod, Developer on keys, Developer exporting audit |
 | 403 | `CSRF_INVALID` | A cookie-authenticated write without a valid `X-CSRF-Token` |
-| 403 | `KEY_SCOPE` | An API key used outside its environment |
 | 404 | `NOT_FOUND` | The id does not exist or belongs to another team |
 | 404 | `ROUTE_NOT_FOUND` | The method and path match no endpoint |
 | 409 | `CONFLICT` | Duplicate flag key or rule; deleting a flag that is not archived |
 | 409 | `STALE_VERSION` | The `version` sent is older than the row; reload and try again |
 | 413 | `PAYLOAD_TOO_LARGE` | Body over 10 kB |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | A body was sent without `Content-Type: application/json` |
-| 429 | `RATE_LIMITED` | Too many failed logins, or too many evaluations for one key |
+| 429 | `RATE_LIMITED` | Too many failed logins, or more than 120 evaluations in a minute for one key (with a `Retry-After` header) |
 | 500 | `INTERNAL_ERROR` | Anything unexpected. Details are only in the log under the `requestId` |
 | 502 | `UPSTREAM_FAILED` | GitHub rejected or did not answer the issue request |
 | 503 | `DB_UNAVAILABLE` | The database is unreachable |
