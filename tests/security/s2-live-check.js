@@ -1,15 +1,25 @@
-// S2 security tests against a deployed copy of the app (docs/api-test-plan.md: ST-04, ST-05,
-// prod rule). Signs in as the seeded Developer, tries requests that MUST be refused, and prints
-// expected vs actual. Nothing is changed: every request below is refused before any write.
+// S2 security tests (docs/api-test-plan.md: ST-03, ST-04, ST-05, prod rule). Signs in as the
+// seeded Developer, tries requests that MUST be refused, and prints expected vs actual.
+// Nothing is changed: every request below is refused before any write.
 //
-// Usage (repo root):  node --env-file=.env tests/security/s2-live-check.js [base-url]
+// WHERE IT CAN RUN: on your PC (default, http://localhost:3000) or on a Vercel Preview URL.
+// Those use Cloudflare's official Turnstile TEST keys, which accept the test token below.
+// It cannot sign in on production, and that is correct: production has real Turnstile keys,
+// so no script can log in there (that is what the bot check is for). Check production by hand.
+//
+// Usage (repo root):
+//   1. Terminal 1:  npm run dev:api          (your .env needs NODE_ENV=development)
+//   2. Terminal 2:  node --env-file=.env tests/security/s2-live-check.js [base-url]
 // Needs SEED_PASSWORD in .env. The password is only sent to the app's own /auth/login.
-const BASE = (process.argv[2] || 'https://feature-flag-manager-cyan.vercel.app').replace(/\/+$/, '');
+const BASE = (process.argv[2] || 'http://localhost:3000').replace(/\/+$/, '');
 const API = `${BASE}/api/v1`;
+// Cloudflare's documented dummy token: only accepted by the test secret keys.
+const TEST_TURNSTILE_TOKEN = 'XXXX.DUMMY.TOKEN.XXXX';
 
 let cookie = '';
-async function call(method, path, { body, csrf } = {}) {
+async function call(method, path, { body, csrf, turnstile } = {}) {
   const headers = {};
+  if (turnstile) headers['X-Turnstile-Token'] = turnstile;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (cookie) headers.Cookie = cookie;
   if (csrf) headers['X-CSRF-Token'] = csrf;
@@ -28,12 +38,27 @@ function check(id, test, expected, actual, pass) {
 (async () => {
   if (!process.env.SEED_PASSWORD) {
     console.error('SEED_PASSWORD is not set. Run with: node --env-file=.env tests/security/s2-live-check.js');
-    process.exit(1);
+    process.exitCode = 1; return;
   }
-  const login = await call('POST', '/auth/login', { body: { email: 'dev@acme.test', password: process.env.SEED_PASSWORD } });
+  let login;
+  try {
+    login = await call('POST', '/auth/login', {
+      body: { email: 'dev@acme.test', password: process.env.SEED_PASSWORD }, turnstile: TEST_TURNSTILE_TOKEN,
+    });
+  } catch {
+    console.error(`Could not reach ${BASE}. Start the API first in another terminal: npm run dev:api`);
+    process.exitCode = 1; return;
+  }
   if (login.status !== 200) {
-    console.error(`Login as dev@acme.test failed (${login.status}). Is SEED_PASSWORD the one used for this database?`);
-    process.exit(1);
+    const code = login.json?.error?.code;
+    const help = {
+      BOT_CHECK_UNAVAILABLE: 'The server has no Turnstile keys. On your PC: add NODE_ENV=development to .env and restart "npm run dev:api".',
+      BOT_CHECK_FAILED: 'This server uses REAL Turnstile keys (production), so a script cannot sign in. That is the bot check working. Run this against http://localhost:3000 or a Preview URL instead.',
+      UNAUTHENTICATED: 'Wrong password: SEED_PASSWORD in .env is not the one this database was seeded with.',
+      RATE_LIMITED: 'Too many failed logins for this account or IP. Wait 15 minutes.',
+    }[code] ?? 'Unexpected answer.';
+    console.error(`Login as dev@acme.test failed: ${login.status} ${code ?? ''}\n${help}`);
+    process.exitCode = 1; return;
   }
   const me = await call('GET', '/auth/me');
   const csrf = me.json.csrfToken;
@@ -73,5 +98,5 @@ function check(id, test, expected, actual, pass) {
   console.table(rows);
   const failed = rows.filter((x) => x.result === 'FAIL').length;
   console.log(failed ? `${failed} FAILED` : 'All passed. The three 403s are now on the Audit page as access.denied.');
-  process.exit(failed ? 1 : 0);
-})().catch((err) => { console.error(err.message); process.exit(1); });
+  process.exitCode = failed ? 1 : 0;
+})().catch((err) => { console.error(err.message); process.exitCode = 1; });
