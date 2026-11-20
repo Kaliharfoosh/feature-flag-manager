@@ -1,0 +1,80 @@
+{
+  "info": {
+    "name": "Feature Flag Manager · ST-11 brute-force login",
+    "description": "ST-11 (S1 builds the limit, S3 runs the test and owns the monitoring card). Sends wrong passwords for one email until the API answers 429. Expected: attempts 1-5 get 401, attempt 6 gets 429 RATE_LIMITED. Afterwards this IP cannot log in for 15 minutes, so run it LAST and on the Preview or the local stack, never on production. Then sign in from another network or wait 15 minutes and check the monitoring card: failed logins and the IP in \"Most failed logins by IP\".",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "attempt",
+      "value": "0"
+    }
+  ],
+  "item": [
+    {
+      "name": "Wrong password (repeats until 429)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.collectionVariables.set('attempt', Number(pm.collectionVariables.get('attempt')) + 1);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const n = Number(pm.collectionVariables.get('attempt'));",
+              "if (n <= 5) {",
+              "  pm.test(`attempt ${n}: 401 with the same message for every wrong login`, () => { pm.response.to.have.status(401); pm.expect(pm.response.json().error.message).to.eql('Invalid email or password.'); });",
+              "  postman.setNextRequest('Wrong password (repeats until 429)');",
+              "} else {",
+              "  pm.test(`attempt ${n}: 429 RATE_LIMITED`, () => { pm.response.to.have.status(429); pm.expect(pm.response.json().error.code).to.eql('RATE_LIMITED'); });",
+              "  pm.test('no session cookie on a refused login', () => pm.expect(pm.response.headers.get('Set-Cookie')).to.be.undefined);",
+              "  postman.setNextRequest(null);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-Turnstile-Token",
+            "value": "{{turnstileToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "auth",
+            "login"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{devEmail}}\",\n  \"password\": \"wrong-password-{{attempt}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

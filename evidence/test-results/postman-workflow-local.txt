@@ -1,0 +1,382 @@
+(node:37696) [DEP0176] DeprecationWarning: fs.F_OK is deprecated, use fs.constants.F_OK instead
+(Use `node --trace-deprecation ...` to show where the warning was created)
+Feature Flag Manager · integrated workflow
+
+Folder 0 · Before signing in
+Sub-folder Health
+  GET http://localhost:3000/api/v1/health [200 OK, 969B, 38ms]
+  Pass  200
+  Pass  database reachable
+
+Sub-folder ST-01 Flags without a session
+  GET http://localhost:3000/api/v1/flags [401 Unauthorized, 1.06kB, 13ms]
+  Pass  401
+  Pass  error code UNAUTHENTICATED
+  Pass  error carries the requestId from X-Request-Id
+  Pass  no data leaked
+
+Sub-folder AUD-07 Audit without a session
+  GET http://localhost:3000/api/v1/audit [401 Unauthorized, 1.08kB, 14ms]
+  Pass  401
+
+Sub-folder Unknown route
+  GET http://localhost:3000/api/v1/admin/backup [404 Not Found, 1.05kB, 13ms]
+  Pass  404
+  Pass  error code ROUTE_NOT_FOUND
+
+Sub-folder ST-15 Login without a bot-check token
+  POST http://localhost:3000/api/v1/auth/login [403 Forbidden, 1.11kB, 64ms]
+  Pass  403
+  Pass  error code BOT_CHECK_FAILED
+  Pass  no session cookie
+
+Folder 1 · Admin: the main workflow
+Sub-folder Log in as Admin
+  POST http://localhost:3000/api/v1/auth/login [200 OK, 1.29kB, 1266ms]
+  Pass  200
+  Pass  signed in as {{adminEmail}}
+  Pass  session cookie is HttpOnly and SameSite=Strict
+
+Sub-folder Current user and CSRF token
+  GET http://localhost:3000/api/v1/auth/me [200 OK, 1.57kB, 26ms]
+  Pass  200
+  Pass  CSRF token received
+
+Sub-folder Create a flag
+  POST http://localhost:3000/api/v1/flags [201 Created, 1.63kB, 44ms]
+  Pass  201
+  Pass  starts OFF and 0% everywhere
+
+Sub-folder Duplicate flag key is refused
+  POST http://localhost:3000/api/v1/flags [409 Conflict, 1.25kB, 31ms]
+  Pass  409
+  Pass  error code CONFLICT
+
+Sub-folder FLG-19 Turn the flag on in staging
+  PATCH http://localhost:3000/api/v1/flags/f8401d4e-0e53-4bdf-a6fa-0dc35a41ff50/environments/staging [200 OK, 1.26kB, 38ms]
+  Pass  200
+  Pass  now on
+
+Sub-folder Stale version is refused (409)
+  PATCH http://localhost:3000/api/v1/flags/f8401d4e-0e53-4bdf-a6fa-0dc35a41ff50/environments/staging [409 Conflict, 1.29kB, 25ms]
+  Pass  409
+  Pass  error code STALE_VERSION
+
+Sub-folder Read the rollouts
+  GET http://localhost:3000/api/v1/rollouts/f8401d4e-0e53-4bdf-a6fa-0dc35a41ff50 [200 OK, 1.28kB, 26ms]
+  Pass  200
+
+Sub-folder ST-05 Invalid percentage is refused
+  PUT http://localhost:3000/api/v1/rollouts/f8401d4e-0e53-4bdf-a6fa-0dc35a41ff50/staging [400 Bad Request, 1.26kB, 16ms]
+  Pass  400
+  Pass  error code VALIDATION_ERROR
+  Pass  message names the field
+
+Sub-folder ROL-02 Set staging to 25%
+  PUT http://localhost:3000/api/v1/rollouts/f8401d4e-0e53-4bdf-a6fa-0dc35a41ff50/staging [200 OK, 1.24kB, 37ms]
+  Pass  200
+  Pass  25%
+
+Sub-folder Client app evaluates the flag with the staging key
+  POST http://localhost:3000/api/v1/evaluations [200 OK, 1.02kB, 31ms]
+  Pass  200
+  Pass  answer is for staging, taken from the key
+  Pass  enabled is a yes/no answer
+  Pass  never cached
+
+Sub-folder ST-06 Key scope: an env in the body is refused
+  POST http://localhost:3000/api/v1/evaluations [400 Bad Request, 1.08kB, 22ms]
+  Pass  400
+
+Sub-folder Unknown API key is refused
+  POST http://localhost:3000/api/v1/evaluations [401 Unauthorized, 1.11kB, 19ms]
+  Pass  401
+  Pass  error code UNAUTHENTICATED
+
+Sub-folder AUD-01 The toggle is in the audit log
+  GET http://localhost:3000/api/v1/audit?action=flag.toggled&limit=5 [200 OK, 3.14kB, 26ms]
+  Pass  200
+  Pass  event found, newest first
+  Pass  before → after recorded
+  Pass  actor is the Admin
+  Pass  requestId matches the toggle response header
+
+Sub-folder AUD-02 The rollout change is in the audit log
+  GET http://localhost:3000/api/v1/audit?action=rollout.updated&limit=5 [200 OK, 2.8kB, 27ms]
+  Pass  200
+  Pass  0% → 25% recorded
+  Pass  only rollout.updated events
+
+Sub-folder AUD-20 Turn the flag on in prod (raises an alert)
+  PATCH http://localhost:3000/api/v1/flags/f8401d4e-0e53-4bdf-a6fa-0dc35a41ff50/environments/prod [200 OK, 1.26kB, 43ms]
+  Pass  200
+
+Sub-folder Find the prod change in the audit log
+  GET http://localhost:3000/api/v1/audit?action=flag.toggled&limit=1 [200 OK, 1.56kB, 24ms]
+  Pass  200
+  Pass  it is the prod toggle
+
+Sub-folder The alert exists, and its GitHub issue was attempted
+  GET http://localhost:3000/api/v1/alerts [200 OK, 2.6kB, 19ms]
+  Pass  200
+  Pass  prod_change alert raised for that event
+  Pass  delivery finished: sent, or failed with a reason
+
+Sub-folder AUD-21/22 Retry the GitHub issue
+  POST http://localhost:3000/api/v1/alerts/105/github-issue [502 Bad Gateway, 1.29kB, 44ms]
+  Pass  201/200 when GitHub works, 502 when it does not
+  Pass  502 is UPSTREAM_FAILED
+  Pass  the token never appears in the response
+
+Sub-folder AUD-24 Retry for an event with no alert
+  POST http://localhost:3000/api/v1/alerts/999999999/github-issue [404 Not Found, 1.26kB, 20ms]
+  Pass  404
+
+Sub-folder ST-17 setup: a flag whose name is a spreadsheet formula
+  POST http://localhost:3000/api/v1/flags [201 Created, 1.62kB, 48ms]
+  Pass  201
+
+Sub-folder ST-17 / AUD-11 CSV export is safe to open in a spreadsheet
+  GET http://localhost:3000/api/v1/audit/export.csv?category=change [200 OK, 9.53kB, 27ms]
+  Pass  200
+  Pass  CSV download
+  Pass  header row
+  Pass  the formula flag is in the export
+  Pass  no cell starts with a formula character
+
+Sub-folder AUD-09 Summary card
+  GET http://localhost:3000/api/v1/audit/summary?days=7 [200 OK, 1.22kB, 26ms]
+  Pass  200
+  Pass  all counts present
+  Pass  the prod change is counted
+
+Sub-folder AUD-10 Summary with days=0
+  GET http://localhost:3000/api/v1/audit/summary?days=0 [400 Bad Request, 1.28kB, 15ms]
+  Pass  400
+  Pass  error code VALIDATION_ERROR
+
+Sub-folder AUD-05 Audit with a bad date
+  GET http://localhost:3000/api/v1/audit?from=yesterday [400 Bad Request, 1.3kB, 33ms]
+  Pass  400
+
+Sub-folder Monitoring card
+  GET http://localhost:3000/api/v1/monitoring?hours=24 [200 OK, 3.32kB, 47ms]
+  Pass  200
+  Pass  24 hourly points
+  Pass  totals present
+  Pass  ST-15: the failed bot check is on the card
+
+Sub-folder AUD-17 Monitoring with hours=1000
+  GET http://localhost:3000/api/v1/monitoring?hours=1000 [400 Bad Request, 1.28kB, 25ms]
+  Pass  400
+
+Sub-folder Read the alert rules
+  GET http://localhost:3000/api/v1/alert-rules [200 OK, 1.26kB, 20ms]
+  Pass  200
+  Pass  three rules
+
+Sub-folder ST-04 Alert rules change without a CSRF token
+  PUT http://localhost:3000/api/v1/alert-rules [403 Forbidden, 1.27kB, 33ms]
+  Pass  403
+  Pass  error code CSRF_INVALID
+
+Sub-folder AUD-19 Unknown alert rule
+  PUT http://localhost:3000/api/v1/alert-rules [400 Bad Request, 1.33kB, 26ms]
+  Pass  400
+
+Sub-folder Save the alert rules unchanged (audited)
+  PUT http://localhost:3000/api/v1/alert-rules [200 OK, 1.26kB, 38ms]
+  Pass  200
+
+Sub-folder Read the flag version
+  GET http://localhost:3000/api/v1/flags/f8401d4e-0e53-4bdf-a6fa-0dc35a41ff50 [200 OK, 1.63kB, 19ms]
+  Pass  200
+
+Sub-folder Edit the description
+  PATCH http://localhost:3000/api/v1/flags/f8401d4e-0e53-4bdf-a6fa-0dc35a41ff50 [200 OK, 1.61kB, 42ms]
+  Pass  200
+  Pass  saved
+
+Sub-folder Edit with a stale version is refused
+  PATCH http://localhost:3000/api/v1/flags/f8401d4e-0e53-4bdf-a6fa-0dc35a41ff50 [409 Conflict, 1.28kB, 32ms]
+  Pass  409
+  Pass  error code STALE_VERSION
+
+Sub-folder FLG-15 Archive the flag (Admin)
+  PATCH http://localhost:3000/api/v1/flags/f8401d4e-0e53-4bdf-a6fa-0dc35a41ff50 [200 OK, 1.61kB, 35ms]
+  Pass  200
+  Pass  archived
+
+Sub-folder An archived flag evaluates to off
+  POST http://localhost:3000/api/v1/evaluations [200 OK, 1.02kB, 37ms]
+  Pass  200
+  Pass  off for everyone
+
+Sub-folder flag.archived is in the audit log
+  GET http://localhost:3000/api/v1/audit?action=flag.archived&limit=5 [200 OK, 1.75kB, 31ms]
+  Pass  200
+  Pass  before → after recorded
+
+Sub-folder Restore the flag
+  PATCH http://localhost:3000/api/v1/flags/f8401d4e-0e53-4bdf-a6fa-0dc35a41ff50 [200 OK, 1.61kB, 34ms]
+  Pass  200
+  Pass  active again
+
+Sub-folder Deleting an active flag is refused
+  DELETE http://localhost:3000/api/v1/flags/46be1d15-c8b6-4022-b912-1cf2f9cf6cc0 [409 Conflict, 1.24kB, 34ms]
+  Pass  409
+  Pass  error code CONFLICT
+
+Sub-folder Archive the formula flag
+  PATCH http://localhost:3000/api/v1/flags/46be1d15-c8b6-4022-b912-1cf2f9cf6cc0 [200 OK, 1.61kB, 35ms]
+  Pass  200
+
+Sub-folder Delete the archived flag
+  DELETE http://localhost:3000/api/v1/flags/46be1d15-c8b6-4022-b912-1cf2f9cf6cc0 [204 No Content, 1kB, 28ms]
+  Pass  204
+
+Sub-folder The deleted flag is gone
+  GET http://localhost:3000/api/v1/flags/46be1d15-c8b6-4022-b912-1cf2f9cf6cc0 [404 Not Found, 1.25kB, 21ms]
+  Pass  404
+
+Sub-folder flag.deleted stays in the audit log
+  GET http://localhost:3000/api/v1/audit?action=flag.deleted&limit=5 [200 OK, 1.62kB, 32ms]
+  Pass  200
+  Pass  deletion recorded with what was deleted
+
+Sub-folder Log out
+  POST http://localhost:3000/api/v1/auth/logout [204 No Content, 988B, 19ms]
+  Pass  204
+
+Sub-folder After logout the session is gone
+  GET http://localhost:3000/api/v1/audit [401 Unauthorized, 1.08kB, 12ms]
+  Pass  401
+
+Folder 2 · Developer: what the role may not do
+Sub-folder Log in as Developer
+  POST http://localhost:3000/api/v1/auth/login [200 OK, 1.3kB, 733ms]
+  Pass  200
+  Pass  signed in as {{devEmail}}
+  Pass  session cookie is HttpOnly and SameSite=Strict
+
+Sub-folder Current user and CSRF token
+  GET http://localhost:3000/api/v1/auth/me [200 OK, 1.57kB, 23ms]
+  Pass  200
+  Pass  CSRF token received
+
+Sub-folder Developers can read the audit log
+  GET http://localhost:3000/api/v1/audit?limit=5 [200 OK, 4kB, 33ms]
+  Pass  200
+
+Sub-folder ST-12 / AUD-12 Developer exports the audit log
+  GET http://localhost:3000/api/v1/audit/export.csv [403 Forbidden, 1.27kB, 37ms]
+  Pass  403
+  Pass  error code FORBIDDEN
+  Pass  no CSV returned
+
+Sub-folder AUD-16 Developer opens monitoring
+  GET http://localhost:3000/api/v1/monitoring [403 Forbidden, 1.27kB, 25ms]
+  Pass  403
+
+Sub-folder ST-02 Developer turns a prod flag off
+  PATCH http://localhost:3000/api/v1/flags/f8401d4e-0e53-4bdf-a6fa-0dc35a41ff50/environments/prod [403 Forbidden, 1.25kB, 35ms]
+  Pass  403
+  Pass  error code FORBIDDEN
+
+Sub-folder ST-02 Developer changes the prod rollout
+  PUT http://localhost:3000/api/v1/rollouts/f8401d4e-0e53-4bdf-a6fa-0dc35a41ff50/prod [403 Forbidden, 1.24kB, 30ms]
+  Pass  403
+  Pass  error code FORBIDDEN
+
+Sub-folder Read the flag version (Developer)
+  GET http://localhost:3000/api/v1/flags/f8401d4e-0e53-4bdf-a6fa-0dc35a41ff50 [200 OK, 1.61kB, 18ms]
+  Pass  200
+
+Sub-folder Developers may edit the description
+  PATCH http://localhost:3000/api/v1/flags/f8401d4e-0e53-4bdf-a6fa-0dc35a41ff50 [200 OK, 1.61kB, 35ms]
+  Pass  200
+
+Sub-folder Developer archives a flag
+  PATCH http://localhost:3000/api/v1/flags/f8401d4e-0e53-4bdf-a6fa-0dc35a41ff50 [403 Forbidden, 1.25kB, 47ms]
+  Pass  403
+  Pass  error code FORBIDDEN
+
+Sub-folder Developer deletes a flag
+  DELETE http://localhost:3000/api/v1/flags/f8401d4e-0e53-4bdf-a6fa-0dc35a41ff50 [403 Forbidden, 1.24kB, 33ms]
+  Pass  403
+  Pass  error code FORBIDDEN
+
+Sub-folder AUD-23 Developer retries a GitHub issue
+  POST http://localhost:3000/api/v1/alerts/105/github-issue [403 Forbidden, 1.27kB, 28ms]
+  Pass  403
+
+Sub-folder The refusals were recorded as security events
+  GET http://localhost:3000/api/v1/audit?category=security&action=access.denied&limit=10 [200 OK, 4.76kB, 17ms]
+  Pass  200
+  Pass  at least 4 access.denied events for the Developer
+
+Sub-folder Log out
+  POST http://localhost:3000/api/v1/auth/logout [204 No Content, 988B, 23ms]
+  Pass  204
+
+Folder 3 · Another team: ownership
+Sub-folder Log in as Admin of another team
+  POST http://localhost:3000/api/v1/auth/login [200 OK, 1.3kB, 462ms]
+  Pass  200
+  Pass  signed in as {{otherTeamEmail}}
+  Pass  session cookie is HttpOnly and SameSite=Strict
+
+Sub-folder Current user and CSRF token
+  GET http://localhost:3000/api/v1/auth/me [200 OK, 1.57kB, 20ms]
+  Pass  200
+  Pass  CSRF token received
+
+Sub-folder ST-03 Another team's flag answers 404
+  GET http://localhost:3000/api/v1/flags/f8401d4e-0e53-4bdf-a6fa-0dc35a41ff50 [404 Not Found, 1.25kB, 40ms]
+  Pass  404
+  Pass  error code NOT_FOUND
+
+Sub-folder ST-03 Another team's flag cannot be toggled
+  PATCH http://localhost:3000/api/v1/flags/f8401d4e-0e53-4bdf-a6fa-0dc35a41ff50/environments/dev [404 Not Found, 1.22kB, 20ms]
+  Pass  404
+
+Sub-folder AUD-08 Another team's audit events never appear
+  GET http://localhost:3000/api/v1/audit?limit=100 [200 OK, 1.16kB, 27ms]
+  Pass  200
+  Pass  none of the workflow events
+
+Sub-folder Another team's flag cannot be edited
+  PATCH http://localhost:3000/api/v1/flags/f8401d4e-0e53-4bdf-a6fa-0dc35a41ff50 [404 Not Found, 1.22kB, 24ms]
+  Pass  404
+
+Sub-folder Another team's flag cannot be deleted
+  DELETE http://localhost:3000/api/v1/flags/f8401d4e-0e53-4bdf-a6fa-0dc35a41ff50 [404 Not Found, 1.22kB, 27ms]
+  Pass  404
+
+Sub-folder Another team's alert cannot be retried
+  POST http://localhost:3000/api/v1/alerts/105/github-issue [404 Not Found, 1.26kB, 16ms]
+  Pass  404
+
+Sub-folder Log out
+  POST http://localhost:3000/api/v1/auth/logout [204 No Content, 988B, 13ms]
+  Pass  204
+
+---------------------------------------------------------------------
+|                         |           executed |             failed |
+--------------------------+--------------------+---------------------
+|              iterations |                  1 |                  0 |
+--------------------------+--------------------+---------------------
+|                requests |                 72 |                  0 |
+--------------------------+--------------------+---------------------
+|            test-scripts |                 72 |                  0 |
+--------------------------+--------------------+---------------------
+|      prerequest-scripts |                 84 |                  0 |
+--------------------------+--------------------+---------------------
+|              assertions |                139 |                  0 |
+---------------------------------------------------------------------
+| total run duration: 10.6s                                         |
+---------------------------------------------------------------------
+| total data received: 35.3kB (approx)                              |
+---------------------------------------------------------------------
+| average response time: 61ms [min: 12ms, max: 1266ms, s.d.: 172ms] |
+---------------------------------------------------------------------
