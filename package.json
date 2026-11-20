@@ -8,6 +8,7 @@
     "dev:web": "npm --prefix frontend run dev",
     "migrate": "node --env-file=.env backend/db/migrate.js",
     "seed": "node --env-file=.env backend/db/seed.js",
+    "seed:key": "node --env-file=.env backend/db/seed-key.js",
     "test": "jest --runInBand",
     "build:lambda": "node infra/floci/build-lambda.js"
   },
