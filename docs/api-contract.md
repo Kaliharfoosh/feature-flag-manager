@@ -96,6 +96,12 @@ from the client; if sent they are ignored.
 
 ## S1 · Identity (shared)
 
+### GET /auth/config — public sign-in verification configuration
+
+- Who is Public.
+- Returns `{ "siteKey": "<public Turnstile key>", "action": "login" }`. The secret key stays on the server.
+- Returns `503 BOT_CHECK_UNAVAILABLE` if the widget keys are missing or unsuitable for production.
+
 ### POST /auth/login — create a session
 
 - Who: Public
@@ -112,7 +118,10 @@ from the client; if sent they are ignored.
 ```
 
 - Errors: `400` (missing or badly formed fields), `401 UNAUTHENTICATED` (wrong email or password; same message for both), `429 RATE_LIMITED` (5 failed attempts for that email or IP in 15 minutes).
-- Every failed attempt writes a `security` audit event `login.failed`.
+- Send a fresh widget token in `X-Turnstile-Token`. The server validates it with Cloudflare before checking credentials.
+- A missing, expired or rejected token returns `403 BOT_CHECK_FAILED`. A verification outage returns `503 BOT_CHECK_UNAVAILABLE` and prevents login.
+- Failed bot checks create `bot_check.failed` security audit events and appear in Monitoring. They do not increment password failure counters.
+- Every failed password attempt writes a `security` audit event `login.failed`.
 
 ### POST /auth/logout — destroy the session
 
@@ -382,7 +391,7 @@ An audit event as returned by the API:
 
 ```json
 { "hours": 24,
-  "failedLogins": 12, "forbidden": 3, "serverErrors": 0, "rateLimited": 2, "alertFailures": 1,
+  "failedLogins": 12, "botCheckFailures": 0, "forbidden": 3, "serverErrors": 0, "rateLimited": 2, "alertFailures": 1,
   "topFailedLoginIps": [ { "ip": "203.0.113.9", "count": 11 } ],
   "series": [ { "hour": "2026-11-13T13:00:00.000Z", "failedLogins": 11, "forbidden": 1, "serverErrors": 0 } ] }
 ```
@@ -451,6 +460,7 @@ screenshot of an error can be matched to its log entry.
 | 400 | `VALIDATION_ERROR` | A field is missing, the wrong type or breaks a rule (the message names the field); or the body is not valid JSON |
 | 401 | `UNAUTHENTICATED` | No or expired session cookie; wrong login; missing, unknown or revoked API key |
 | 403 | `FORBIDDEN` | Wrong role: Developer on prod, Developer on keys, Developer exporting audit |
+| 403 | `BOT_CHECK_FAILED` | Missing, expired or rejected Turnstile token |
 | 403 | `CSRF_INVALID` | A cookie-authenticated write without a valid `X-CSRF-Token` |
 | 403 | `KEY_SCOPE` | An API key used outside its environment |
 | 404 | `NOT_FOUND` | The id does not exist or belongs to another team |
@@ -462,6 +472,7 @@ screenshot of an error can be matched to its log entry.
 | 429 | `RATE_LIMITED` | Too many failed logins, or too many evaluations for one key |
 | 500 | `INTERNAL_ERROR` | Anything unexpected. Details are only in the log under the `requestId` |
 | 502 | `UPSTREAM_FAILED` | GitHub rejected or did not answer the issue request |
+| 503 | `BOT_CHECK_UNAVAILABLE` | Turnstile verification or production widget configuration is unavailable |
 | 503 | `DB_UNAVAILABLE` | The database is unreachable |
 
 ## Where each status code is produced

@@ -1,3 +1,8 @@
+// These route tests isolate the sign-in flow from the external challenge service.
+jest.mock('../../../middleware/turnstile', () => ({
+  ...jest.requireActual('../../../middleware/turnstile'), verifyTurnstile: jest.fn(),
+}));
+
 // Route tests for GET /rollouts/:flagId, the allow/block rules and POST /preview through the real
 // Express app (real sessions, CSRF, requireAuth, requireRole). The database is mocked;
 // rules.db.test.js runs the same SQL against a real Postgres.

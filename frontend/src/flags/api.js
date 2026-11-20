@@ -8,6 +8,7 @@ async function request(path, options = {}) {
     if (error.name === 'AbortError') throw error
     throw new Error('Could not reach the server. Please try again.')
   }
+  if (response.status === 204) return
   const body = await response.json().catch(() => null)
   if (!response.ok || !body) {
     const message = response.status === 401
@@ -37,5 +38,20 @@ export function toggleEnvironment(flagId, env, setting, csrfToken) {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
     body: JSON.stringify({ enabled: !setting.enabled, version: setting.version }),
+  })
+}
+
+export function updateFlag(flagId, input, csrfToken) {
+  return request(`/${encodeURIComponent(flagId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+    body: JSON.stringify(input),
+  })
+}
+
+export function deleteFlag(flagId, csrfToken) {
+  return request(`/${encodeURIComponent(flagId)}`, {
+    method: 'DELETE',
+    headers: { 'X-CSRF-Token': csrfToken },
   })
 }

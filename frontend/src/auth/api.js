@@ -29,10 +29,10 @@ export function getSession(signal) {
   return authRequest('me', { signal })
 }
 
-export function signIn(email, password) {
+export function signIn(email, password, turnstileToken) {
   return authRequest('login', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Turnstile-Token': turnstileToken },
     body: JSON.stringify({ email, password }),
   })
 }
@@ -42,4 +42,8 @@ export function signOut(csrfToken) {
     method: 'POST',
     headers: { 'X-CSRF-Token': csrfToken },
   })
+}
+
+export function getLoginConfig(signal) {
+  return authRequest('config', { signal })
 }

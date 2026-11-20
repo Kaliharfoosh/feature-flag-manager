@@ -1,3 +1,8 @@
+// These route tests isolate the sign-in flow from the external challenge service.
+jest.mock('../../../middleware/turnstile', () => ({
+  ...jest.requireActual('../../../middleware/turnstile'), verifyTurnstile: jest.fn(),
+}));
+
 const request = require('supertest');
 
 jest.mock('connect-pg-simple', () => (session) => session.MemoryStore);

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import './FlagsPage.css'
 import CreateFlagDialog from './CreateFlagDialog.jsx'
-import { fetchFlags, getFlag, toggleEnvironment } from './api'
+import { fetchFlags, getFlag, toggleEnvironment, updateFlag, deleteFlag } from './api'
 
 const environments = [
   ['dev', 'Development'],
@@ -19,13 +19,60 @@ function EnvironmentStatus({ enabled }) {
   )
 }
 
-function RolloutChart({ flag, role, csrfToken, onUpdated, onClose }) {
+function RolloutChart({ flag, role, csrfToken, onUpdated, onDeleted, onClose }) {
   const dialog = useRef(null)
   const saving = useRef(false)
   const [pending, setPending] = useState(false)
   const [needsReload, setNeedsReload] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [editor, setEditor] = useState(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteKey, setDeleteKey] = useState('')
+
+
+  function beginEdit() {
+    setEditor({ name: flag.name, description: flag.description, version: flag.version })
+    setError('')
+    setNotice('')
+  }
+
+  async function saveDetails(input, message) {
+    if (saving.current) return
+    saving.current = true
+    setPending(true)
+    setError('')
+    setNotice('')
+    try {
+      onUpdated(await updateFlag(flag.id, input, csrfToken))
+      setEditor(null)
+      setNotice(message)
+    } catch (error) {
+      setError(error.message)
+      if (error.code === 'STALE_VERSION') setNeedsReload(true)
+    } finally {
+      saving.current = false
+      setPending(false)
+    }
+  }
+
+  async function confirmDeletion() {
+    if (saving.current || deleteKey !== flag.key) return
+    saving.current = true
+    setPending(true)
+    setError('')
+    try {
+      await deleteFlag(flag.id, csrfToken)
+      dialog.current.close()
+      onDeleted(flag)
+    } catch (error) {
+      setError(error.message)
+      if (error.status === 409 || error.status === 404) setNeedsReload(true)
+    } finally {
+      saving.current = false
+      setPending(false)
+    }
+  }
 
   async function changeEnvironment(env, label) {
     if (saving.current) return
@@ -65,6 +112,8 @@ function RolloutChart({ flag, role, csrfToken, onUpdated, onClose }) {
     try {
       onUpdated(await getFlag(flag.id))
       setNeedsReload(false)
+      setEditor(null)
+      setDeleting(false)
     } catch (error) {
       setError(error.message)
     } finally {
@@ -89,7 +138,59 @@ function RolloutChart({ flag, role, csrfToken, onUpdated, onClose }) {
         </div>
         <button type="button" className="flag-button" disabled={pending} onClick={() => dialog.current.close()}>Close</button>
       </header>
-      {flag.description && <p className="rollout-description">{flag.description}</p>}
+
+      {flag.archived && <p className="archived-notice">Archived flags evaluate Off in every environment.</p>}
+      {editor ? (
+        <form className="flag-edit-form" onSubmit={(event) => {
+          event.preventDefault()
+          saveDetails(editor, 'Flag details saved.')
+        }} aria-busy={pending}>
+          <label htmlFor="edit-flag-name">Name</label>
+          <input
+            id="edit-flag-name" required maxLength={100} value={editor.name} readOnly={pending}
+            onChange={(event) => setEditor({ ...editor, name: event.target.value })}
+          />
+          <label htmlFor="edit-flag-description">Description</label>
+          <textarea
+            id="edit-flag-description" rows={3} maxLength={500} value={editor.description} readOnly={pending}
+            onChange={(event) => setEditor({ ...editor, description: event.target.value })}
+          />
+          <div className="flag-action-row">
+            <button type="submit" className="flag-button flag-button-primary" disabled={pending || needsReload}>Save details</button>
+            <button type="button" className="flag-button" disabled={pending} onClick={() => setEditor(null)}>Cancel editing</button>
+          </div>
+        </form>
+      ) : (
+        <>
+          {flag.description && <p className="rollout-description">{flag.description}</p>}
+          <div className="flag-action-row">
+            <button type="button" className="flag-button" disabled={pending || needsReload || deleting} onClick={beginEdit}>Edit details</button>
+            {role === 'admin' && (
+              <button
+                type="button" className="flag-button" disabled={pending || needsReload || deleting}
+                onClick={() => saveDetails({ archived: !flag.archived, version: flag.version }, flag.archived ? 'Flag restored.' : 'Flag archived.')}
+              >
+                {flag.archived ? 'Restore flag' : 'Archive flag'}
+              </button>
+            )}
+            {role === 'admin' && flag.archived && (
+              <button type="button" className="flag-button flag-button-danger" disabled={pending || needsReload} onClick={() => { setDeleting(true); setDeleteKey(''); setError('') }}>Delete flag</button>
+            )}
+          </div>
+        </>
+      )}
+      {deleting && (
+        <section className="flag-delete-confirmation" aria-labelledby="delete-flag-title">
+          <h3 id="delete-flag-title">Permanently delete this flag?</h3>
+          <p>The flag, environment settings and user rules will be removed. Audit history is kept.</p>
+          <label htmlFor="delete-flag-key">Type <code>{flag.key}</code> to confirm</label>
+          <input id="delete-flag-key" autoComplete="off" value={deleteKey} readOnly={pending} onChange={(event) => setDeleteKey(event.target.value)} />
+          <div className="flag-action-row">
+            <button type="button" className="flag-button flag-button-danger" disabled={pending || deleteKey !== flag.key} onClick={confirmDeletion}>Delete permanently</button>
+            <button type="button" className="flag-button" disabled={pending} onClick={() => setDeleting(false)}>Keep flag</button>
+          </div>
+        </section>
+      )}
       <figure className="rollout-chart">
         <figcaption>Configured rollout by environment</figcaption>
         {environments.map(([key, label]) => {
@@ -101,7 +202,7 @@ function RolloutChart({ flag, role, csrfToken, onUpdated, onClose }) {
                 <button
                   type="button" role="switch" aria-label={label} aria-checked={setting.enabled}
                   className="environment-switch"
-                  disabled={pending || needsReload || (key === 'prod' && role !== 'admin')}
+                  disabled={pending || needsReload || editor !== null || deleting || flag.archived || (key === 'prod' && role !== 'admin')}
                   onClick={() => changeEnvironment(key, label)}
                 >
                   <span className="switch-track" aria-hidden="true" />
@@ -124,7 +225,7 @@ function RolloutChart({ flag, role, csrfToken, onUpdated, onClose }) {
       {error && <p className="toggle-error" role="alert">{error}</p>}
       {needsReload && <button type="button" className="flag-button" disabled={pending} onClick={reloadDetails}>Reload details</button>}
       {/* S2: opens the rollout page (percentages, allow/block lists, preview) */}
-      {!pending && <Link className="rollout-manage" to={`/flags/${flag.id}/rollout`} state={{ flag }}>Manage rollout →</Link>}
+      {!pending && !editor && !deleting && <Link className="rollout-manage" to={`/flags/${flag.id}/rollout`} state={{ flag }}>Manage rollout →</Link>}
     </dialog>
   )
 }
@@ -158,11 +259,20 @@ export default function FlagsPage({ csrfToken, role }) {
   }, [search])
 
   function handleUpdated(flag) {
+    if (selectedFlag && (flag.archived !== selectedFlag.archived || flag.name !== selectedFlag.name || flag.description !== selectedFlag.description)) {
+      setFilters((current) => ({ ...current }))
+    }
     setSelectedFlag(flag)
     setResult((current) => current?.page ? {
       ...current,
       page: { ...current.page, items: current.page.items.map((item) => item.id === flag.id ? flag : item) },
     } : current)
+  }
+
+  function handleDeleted(flag) {
+    setSelectedFlag(null)
+    setCreatedMessage(`“${flag.name}” was deleted.`)
+    setFilters((current) => ({ ...current, cursors: [null] }))
   }
 
   function handleCreated(flag) {
@@ -242,7 +352,7 @@ export default function FlagsPage({ csrfToken, role }) {
                         </button>
                       </th>
                       {environments.map(([key]) => (
-                        <td key={key}><EnvironmentStatus enabled={flag.environments[key].enabled} /></td>
+                        <td key={key}><EnvironmentStatus enabled={!flag.archived && flag.environments[key].enabled} /></td>
                       ))}
                     </tr>
                   ))}
@@ -283,7 +393,7 @@ export default function FlagsPage({ csrfToken, role }) {
         )}
       </div>
       {creating && <CreateFlagDialog csrfToken={csrfToken} onCreated={handleCreated} onClose={() => setCreating(false)} />}
-      {selectedFlag && <RolloutChart flag={selectedFlag} role={role} csrfToken={csrfToken} onUpdated={handleUpdated} onClose={() => setSelectedFlag(null)} />}
+      {selectedFlag && <RolloutChart flag={selectedFlag} role={role} csrfToken={csrfToken} onUpdated={handleUpdated} onDeleted={handleDeleted} onClose={() => setSelectedFlag(null)} />}
     </section>
   )
 }

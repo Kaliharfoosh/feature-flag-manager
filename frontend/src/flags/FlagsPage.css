@@ -410,3 +410,42 @@
 @media (prefers-reduced-motion: reduce) {
   .switch-track, .switch-track::after { transition: none; }
 }
+
+
+.flag-action-row { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+
+.flag-edit-form { margin-top: 1rem; }
+.flag-edit-form textarea {
+  width: 100%;
+  padding: .6rem .75rem;
+  border: 1px solid #8d95aa;
+  border-radius: .5rem;
+  font: inherit;
+  color: inherit;
+  resize: vertical;
+}
+.flag-button-primary { background: #5943c4; color: #fff; border-color: #5943c4; }
+.flag-button-primary:hover:enabled { background: #4833a7; }
+.flag-button-danger { color: #902633; border-color: #d6a9ae; }
+.flag-button-danger:hover:enabled { background: #fff0f2; }
+
+.archived-notice {
+  margin: 1rem 0;
+  padding: .6rem .75rem;
+  border-radius: .5rem;
+  background: #f4effb;
+  color: #4b2d86;
+  font-size: .875rem;
+}
+
+.flag-delete-confirmation {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid #e9bbc2;
+  border-radius: .75rem;
+  background: #fff7f8;
+}
+.flag-delete-confirmation h3 { margin: 0; font-size: 1rem; }
+.flag-delete-confirmation p { margin: .5rem 0 .9rem; font-size: .875rem; color: #585469; }
+.flag-delete-confirmation label { display: block; }
+.flag-delete-confirmation input { margin-bottom: 0; }

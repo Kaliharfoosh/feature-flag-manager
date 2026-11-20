@@ -76,4 +76,24 @@ function parseFlagId(id) {
   return parsed.data;
 }
 
-module.exports = { parseListQuery, parseCreateBody, parseToggle, parseFlagId, encodeCursor };
+const updateBody = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  description: z.string().trim().max(500).optional(),
+  archived: z.boolean().optional(),
+  version: z.number().int().min(1).max(2147483646),
+}).refine((input) => input.name !== undefined || input.description !== undefined || input.archived !== undefined, {
+  message: 'Provide a name, description or archived value to change.',
+});
+
+function parseUpdateBody(body) {
+  const parsed = updateBody.safeParse(body);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    throw Object.assign(new Error(`${issue.path.join('.') || 'body'} ${issue.message}`), {
+      status: 400, code: 'VALIDATION_ERROR',
+    });
+  }
+  return parsed.data;
+}
+
+module.exports = { parseListQuery, parseCreateBody, parseUpdateBody, parseToggle, parseFlagId, encodeCursor };

@@ -1,3 +1,8 @@
+// These route tests isolate the sign-in flow from the external challenge service.
+jest.mock('../../../middleware/turnstile', () => ({
+  ...jest.requireActual('../../../middleware/turnstile'), verifyTurnstile: jest.fn(),
+}));
+
 // Route tests through the real Express app: real sessions, CSRF, requireAuth and requireRole.
 // The database, the login check and the SQL layer are mocked; query.js has its own tests.
 const request = require('supertest');

@@ -34,46 +34,54 @@ async function listFlags(teamId, { q, archived, limit, cursor }) {
   return { items, nextCursor: rows.length > limit ? encodeCursor(items.at(-1).key) : null };
 }
 
-async function createFlag(req, input) {
+async function inTransaction(work) {
   const client = await pool.connect();
   let releaseError;
   try {
     await client.query('BEGIN');
-    const { rows: [flag] } = await client.query(
-      `INSERT INTO flags (team_id, key, name, description, created_by)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, key, name, description, archived_at IS NOT NULL AS archived,
-                 version, created_by AS "createdBy", created_at AS "createdAt", updated_at AS "updatedAt"`,
-      [req.user.teamId, input.key, input.name, input.description, req.user.id],
-    );
-    const defaults = await createDefaults(client, flag.id);
-    const environments = Object.fromEntries(
-      Object.entries(defaults).map(([env, setting]) => [env, { enabled: false, ...setting }]),
-    );
-    await audit.record(client, req, {
-      action: 'flag.created',
-      targetType: 'flag',
-      targetId: flag.id,
-      after: { key: flag.key, name: flag.name, description: flag.description, archived: false, version: flag.version },
-    });
+    const result = await work(client);
     await client.query('COMMIT');
-    return { ...flag, environments };
+    return result;
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch (failure) { releaseError = failure; }
-    if (error.code === '23505' && error.constraint === 'flags_team_id_key_key') {
-      throw Object.assign(new Error('A flag with this key already exists in your team.'), {
-        status: 409, code: 'CONFLICT',
-      });
-    }
     throw error;
   } finally {
     client.release(releaseError);
   }
 }
 
+async function createFlag(req, input) {
+  try {
+    return await inTransaction(async (client) => {
+      const { rows: [flag] } = await client.query(
+        `INSERT INTO flags (team_id, key, name, description, created_by)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id, key, name, description, archived_at IS NOT NULL AS archived,
+                   version, created_by AS "createdBy", created_at AS "createdAt", updated_at AS "updatedAt"`,
+        [req.user.teamId, input.key, input.name, input.description, req.user.id],
+      );
+      const defaults = await createDefaults(client, flag.id);
+      const environments = Object.fromEntries(
+        Object.entries(defaults).map(([env, setting]) => [env, { enabled: false, ...setting }]),
+      );
+      await audit.record(client, req, {
+        action: 'flag.created',
+        targetType: 'flag',
+        targetId: flag.id,
+        after: { key: flag.key, name: flag.name, description: flag.description, archived: false, version: flag.version },
+      });
+      return { ...flag, environments };
+    });
+  } catch (error) {
+    if (error.code === '23505' && error.constraint === 'flags_team_id_key_key') {
+      throw Object.assign(new Error('A flag with this key already exists in your team.'), { status: 409, code: 'CONFLICT' });
+    }
+    throw error;
+  }
+}
 
-async function getFlag(teamId, flagId) {
-  const { rows: [flag] } = await pool.query(
+async function readFlag(db, teamId, flagId) {
+  const { rows: [flag] } = await db.query(
     `${flagDetailsSql} WHERE f.id = $1 AND f.team_id = $2`, [flagId, teamId],
   );
   if (!flag) {
@@ -82,11 +90,12 @@ async function getFlag(teamId, flagId) {
   return flag;
 }
 
+async function getFlag(teamId, flagId) {
+  return readFlag(pool, teamId, flagId);
+}
+
 async function toggleEnvironment(req, { flagId, env, enabled, version }) {
-  const client = await pool.connect();
-  let releaseError;
-  try {
-    await client.query('BEGIN');
+  return inTransaction(async (client) => {
     const { rows: [flag] } = await client.query(
       'SELECT id, key FROM flags WHERE id = $1 AND team_id = $2 FOR UPDATE',
       [flagId, req.user.teamId],
@@ -125,14 +134,71 @@ async function toggleEnvironment(req, { flagId, env, enabled, version }) {
       details: { key: flag.key, env },
       before: { enabled: before.enabled }, after: { enabled: after.enabled },
     });
-    await client.query('COMMIT');
     return { flagId, env, ...after };
-  } catch (error) {
-    try { await client.query('ROLLBACK'); } catch (failure) { releaseError = failure; }
-    throw error;
-  } finally {
-    client.release(releaseError);
-  }
+  });
 }
 
-module.exports = { listFlags, createFlag, getFlag, toggleEnvironment };
+
+async function lockOwnedFlag(client, teamId, flagId) {
+  const { rows: [flag] } = await client.query(
+    `SELECT id, key, name, description, version, archived_at IS NOT NULL AS archived
+     FROM flags WHERE id = $1 AND team_id = $2 FOR UPDATE`, [flagId, teamId],
+  );
+  if (!flag) throw Object.assign(new Error('Flag not found.'), { status: 404, code: 'NOT_FOUND' });
+  return flag;
+}
+
+function flagSnapshot(flag) {
+  const { key, name, description, archived, version } = flag;
+  return { key, name, description, archived, version };
+}
+
+async function updateFlag(req, flagId, input) {
+  return inTransaction(async (client) => {
+    const before = await lockOwnedFlag(client, req.user.teamId, flagId);
+    if (input.archived !== undefined && req.user.role !== 'admin') {
+      throw Object.assign(new Error('Only an Admin can archive or restore flags.'), { status: 403, code: 'FORBIDDEN' });
+    }
+    if (before.version !== input.version) {
+      throw Object.assign(new Error('This flag changed since you opened it. Reload the details and try again.'), {
+        status: 409, code: 'STALE_VERSION',
+      });
+    }
+    await client.query(
+      `UPDATE flags SET
+         name = COALESCE($3, name), description = COALESCE($4, description),
+         archived_at = CASE WHEN $5::boolean IS NULL THEN archived_at
+                            WHEN $5 THEN COALESCE(archived_at, now()) ELSE NULL END,
+         version = version + 1, updated_at = now()
+       WHERE id = $1 AND team_id = $2`,
+      [flagId, req.user.teamId, input.name ?? null, input.description ?? null, input.archived ?? null],
+    );
+    const after = await readFlag(client, req.user.teamId, flagId);
+    let action = 'flag.updated';
+    if (before.archived !== after.archived) action = after.archived ? 'flag.archived' : 'flag.unarchived';
+    await audit.record(client, req, {
+      action, targetType: 'flag', targetId: flagId,
+      before: flagSnapshot(before), after: flagSnapshot(after),
+    });
+    return after;
+  });
+}
+
+async function deleteFlag(req, flagId) {
+  return inTransaction(async (client) => {
+    const flag = await lockOwnedFlag(client, req.user.teamId, flagId);
+    if (req.user.role !== 'admin') {
+      throw Object.assign(new Error('Only an Admin can delete flags.'), { status: 403, code: 'FORBIDDEN' });
+    }
+    if (!flag.archived) {
+      throw Object.assign(new Error('Archive this flag before deleting it.'), { status: 409, code: 'CONFLICT' });
+    }
+    await client.query('DELETE FROM flags WHERE id = $1 AND team_id = $2', [flagId, req.user.teamId]);
+    await audit.record(client, req, {
+      action: 'flag.deleted', targetType: 'flag', targetId: flagId,
+      before: flagSnapshot(flag), after: null,
+    });
+  });
+}
+
+module.exports = { listFlags, createFlag, getFlag, toggleEnvironment, updateFlag, deleteFlag };
