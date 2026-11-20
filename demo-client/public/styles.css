@@ -1,0 +1,72 @@
+/* Acme Store demo. Deliberately looks different from the Feature Flag Manager (it is a
+   customer's shop, not our product), in warm orange instead of our purple. */
+:root {
+  font: 16px/1.5 'Segoe UI', system-ui, sans-serif;
+  color: #2a2118;
+  background: #fbf7f2;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, input { font: inherit; }
+code { padding: 0 .3rem; border-radius: .3rem; background: #f1e8dc; }
+
+.wrap { width: min(100% - 2rem, 44rem); margin-inline: auto; }
+.top { background: #fff; border-bottom: 1px solid #eadfce; }
+.top-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; padding-block: .9rem; }
+.logo { font-weight: 800; font-size: 1.2rem; color: #c2410c; }
+.badge { padding: .15rem .6rem; border-radius: 1rem; background: #fff1e6; color: #9a3412; font-size: .8rem; font-weight: 600; }
+
+main { display: grid; gap: 1rem; padding-block: 1.5rem; }
+.card { padding: 1.25rem; border: 1px solid #eadfce; border-radius: .9rem; background: #fff; }
+.card h1, .card h2 { margin: 0 0 .4rem; letter-spacing: -.02em; }
+.card h1 { font-size: 1.4rem; }
+.card h2 { font-size: 1.15rem; }
+.muted { color: #6f6152; }
+.card p { margin: 0; }
+.small { font-size: .85rem; padding-bottom: 2rem; }
+
+.shoppers { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1rem 0; }
+.shoppers button {
+  padding: .4rem .9rem;
+  border: 1px solid #e6c9a8;
+  border-radius: 2rem;
+  background: #fff8f1;
+  color: #7c2d12;
+  font-weight: 600;
+  cursor: pointer;
+}
+.shoppers button:hover { background: #ffedd5; }
+
+.shopper-form label { display: block; margin-bottom: .35rem; font-size: .9rem; font-weight: 600; }
+.row { display: flex; flex-wrap: wrap; gap: .5rem; }
+.row input { flex: 1 1 12rem; min-height: 2.7rem; padding: .5rem .75rem; border: 1px solid #b9a78f; border-radius: .5rem; }
+
+.primary, .secondary {
+  min-height: 2.7rem;
+  padding: .5rem 1rem;
+  border-radius: .5rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.primary { border: 0; background: #c2410c; color: #fff; }
+.primary:hover:enabled { background: #9a3412; }
+.secondary { border: 1px solid #c2410c; background: #fff; color: #9a3412; }
+.wide { width: 100%; margin-top: 1rem; }
+button:disabled { cursor: default; opacity: .8; }
+:focus-visible { outline: 2px solid #c2410c; outline-offset: 2px; }
+
+.cart, .summary { list-style: none; margin: .5rem 0 0; padding: 0; }
+.cart li, .summary li { display: flex; justify-content: space-between; gap: 1rem; padding: .45rem 0; border-bottom: 1px solid #f1e8dc; }
+.cart .total { font-weight: 700; border-bottom: 0; }
+
+.tag { display: inline-block; margin-bottom: .5rem; padding: .1rem .55rem; border-radius: 1rem; background: #f1e8dc; color: #6f6152; font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.tag-new { background: #dcfce7; color: #166534; }
+.checkout-new { border-color: #86efac; box-shadow: 0 0 0 3px #dcfce755; }
+
+.steps { display: flex; gap: .5rem; padding: 0; margin: .75rem 0; list-style: none; counter-reset: step; }
+.steps li { flex: 1; padding: .4rem .5rem; border-radius: .4rem; background: #f6efe6; text-align: center; font-size: .9rem; counter-increment: step; }
+.steps li::before { content: counter(step) '. '; font-weight: 700; }
+.steps .current { background: #ffedd5; color: #9a3412; font-weight: 700; }
+
+.panel { display: grid; gap: .2rem; padding: .9rem 1rem; border-radius: .7rem; background: #ecfdf5; border: 1px solid #a7f3d0; color: #14532d; font-size: .92rem; }
+.panel-warn { background: #fff7ed; border-color: #fed7aa; color: #9a3412; }

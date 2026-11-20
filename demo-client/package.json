@@ -1,0 +1,11 @@
+{
+  "name": "ffm-demo-shop",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Demo client for the Feature Flag Manager: a tiny shop that reads the new-checkout flag (S2)",
+  "type": "commonjs",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node --env-file=.env server.js"
+  }
+}

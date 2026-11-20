@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Acme Store · Feature flag demo</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap top-row">
+      <span class="logo">Acme Store</span>
+      <span class="badge">Demo client for the Feature Flag Manager</span>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card" aria-labelledby="who">
+      <h1 id="who">Who is shopping?</h1>
+      <p class="muted">Pick a shopper. The store asks the Feature Flag Manager whether the
+        <code>new-checkout</code> flag is on for them, then shows the matching checkout.</p>
+      <div class="shoppers" role="group" aria-label="Example shoppers">
+        <button type="button" data-user="u-981">u-981</button>
+        <button type="button" data-user="u-123">u-123</button>
+        <button type="button" data-user="u-2048">u-2048</button>
+        <button type="button" data-user="u-7">u-7</button>
+      </div>
+      <form id="shopper-form" class="shopper-form">
+        <label for="shopper">Or type any shopper id</label>
+        <div class="row">
+          <input id="shopper" name="shopper" maxlength="100" placeholder="e.g. u-5555" autocomplete="off" required>
+          <button type="submit" class="primary">Go to checkout</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card" aria-labelledby="cart-heading">
+      <h2 id="cart-heading">Your basket</h2>
+      <ul class="cart">
+        <li><span>Wireless headphones</span><span>£79.00</span></li>
+        <li><span>Charging cable</span><span>£12.00</span></li>
+        <li class="total"><span>Total</span><span>£91.00</span></li>
+      </ul>
+    </section>
+
+    <section id="checkout" class="card" aria-live="polite" hidden></section>
+
+    <section id="flag-panel" class="panel" aria-live="polite" hidden></section>
+  </main>
+
+  <footer class="wrap muted small">
+    The API key never reaches this page: the store's own server function asks the flag service.
+    If the flag service fails, the store falls back to the classic checkout.
+  </footer>
+</body>
+</html>
