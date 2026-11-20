@@ -33,4 +33,22 @@ function parseListQuery(query) {
   return result.data;
 }
 
-module.exports = { parseListQuery, encodeCursor };
+
+const createBody = z.object({
+  key: z.string().regex(flagKey, 'must be 3–50 lowercase letters, digits or hyphens, starting and ending with a letter or digit'),
+  name: z.string().trim().min(1).max(100),
+  description: z.string().trim().max(500).default(''),
+});
+
+function parseCreateBody(body) {
+  const result = createBody.safeParse(body);
+  if (!result.success) {
+    const issue = result.error.issues[0];
+    throw Object.assign(new Error(`${issue.path.join('.') || 'body'} ${issue.message}`), {
+      status: 400, code: 'VALIDATION_ERROR',
+    });
+  }
+  return result.data;
+}
+
+module.exports = { parseListQuery, parseCreateBody, encodeCursor };
