@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import './FlagsPage.css'
+import CreateFlagDialog from './CreateFlagDialog.jsx'
 import { API_BASE, CREDENTIALS } from '../apiBase'
 
 const environments = [
@@ -75,7 +76,9 @@ async function fetchFlags(filters, signal) {
   return response.json()
 }
 
-export default function FlagsPage() {
+export default function FlagsPage({ csrfToken }) {
+  const [creating, setCreating] = useState(false)
+  const [createdMessage, setCreatedMessage] = useState('')
   const [search, setSearch] = useState('')
   const [selectedFlag, setSelectedFlag] = useState(null)
   const [filters, setFilters] = useState({ q: '', archived: false, cursors: [null] })
@@ -101,6 +104,13 @@ export default function FlagsPage() {
     return () => clearTimeout(timer)
   }, [search])
 
+  function handleCreated(flag) {
+    setCreating(false)
+    setCreatedMessage(`“${flag.name}” was created. All environments are Off.`)
+    setSearch('')
+    setFilters({ q: '', archived: false, cursors: [null] })
+  }
+
   function clearSearch() {
     setSearch('')
     setFilters((current) => ({ ...current, q: '', cursors: [null] }))
@@ -117,7 +127,9 @@ export default function FlagsPage() {
           <h1 id="flags-heading">Feature flags</h1>
           <p>See what’s enabled across your team’s environments.</p>
         </div>
+        <button type="button" className="create-flag-button" aria-haspopup="dialog" onClick={() => { setCreatedMessage(''); setCreating(true) }}>Create flag</button>
       </div>
+      {createdMessage && <p className="flag-created-message" role="status">{createdMessage}</p>}
 
       <div className="flags-card">
         <div className="flags-toolbar">
@@ -209,6 +221,7 @@ export default function FlagsPage() {
           </div>
         )}
       </div>
+      {creating && <CreateFlagDialog csrfToken={csrfToken} onCreated={handleCreated} onClose={() => setCreating(false)} />}
       {selectedFlag && <RolloutChart flag={selectedFlag} onClose={() => setSelectedFlag(null)} />}
     </section>
   )

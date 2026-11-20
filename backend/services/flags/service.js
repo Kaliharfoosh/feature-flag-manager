@@ -1,5 +1,7 @@
 const { pool } = require('../../db/pool');
 const { encodeCursor } = require('./schema');
+const { createDefaults } = require('../keys-evaluation/rollouts');
+const audit = require('../../shared/audit');
 
 async function listFlags(teamId, { q, archived, limit, cursor }) {
   // The per-team key is unique and immutable, so it also anchors the next page.
@@ -37,4 +39,42 @@ async function listFlags(teamId, { q, archived, limit, cursor }) {
   return { items, nextCursor };
 }
 
-module.exports = { listFlags };
+
+async function createFlag(req, input) {
+  const client = await pool.connect();
+  let releaseError;
+  try {
+    await client.query('BEGIN');
+    const { rows: [flag] } = await client.query(
+      `INSERT INTO flags (team_id, key, name, description, created_by)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, key, name, description, archived_at IS NOT NULL AS archived,
+                 version, created_by AS "createdBy", created_at AS "createdAt", updated_at AS "updatedAt"`,
+      [req.user.teamId, input.key, input.name, input.description, req.user.id],
+    );
+    const defaults = await createDefaults(client, flag.id);
+    const environments = Object.fromEntries(
+      Object.entries(defaults).map(([env, setting]) => [env, { enabled: false, ...setting }]),
+    );
+    await audit.record(client, req, {
+      action: 'flag.created',
+      targetType: 'flag',
+      targetId: flag.id,
+      after: { key: flag.key, name: flag.name, description: flag.description, archived: false, version: flag.version },
+    });
+    await client.query('COMMIT');
+    return { ...flag, environments };
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (failure) { releaseError = failure; }
+    if (error.code === '23505' && error.constraint === 'flags_team_id_key_key') {
+      throw Object.assign(new Error('A flag with this key already exists in your team.'), {
+        status: 409, code: 'CONFLICT',
+      });
+    }
+    throw error;
+  } finally {
+    client.release(releaseError);
+  }
+}
+
+module.exports = { listFlags, createFlag };

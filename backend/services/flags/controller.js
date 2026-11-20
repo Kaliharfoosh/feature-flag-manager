@@ -1,5 +1,5 @@
-const { parseListQuery } = require('./schema');
-const { listFlags } = require('./service');
+const { parseListQuery, parseCreateBody } = require('./schema');
+const { listFlags, createFlag } = require('./service');
 
 async function list(req, res) {
   const filters = parseListQuery(req.query);
@@ -7,4 +7,10 @@ async function list(req, res) {
   res.set('Cache-Control', 'no-store').json(page);
 }
 
-module.exports = { list };
+async function create(req, res) {
+  const input = parseCreateBody(req.body);
+  const flag = await createFlag(req, input);
+  res.set('Cache-Control', 'no-store').status(201).json(flag);
+}
+
+module.exports = { list, create };

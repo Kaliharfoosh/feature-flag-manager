@@ -115,7 +115,7 @@ function App() {
         {session && rolloutMatch && (
           <RolloutPage key={rolloutMatch.params.flagId} flagId={rolloutMatch.params.flagId} session={session} />
         )}
-        {session && !accountView && !rolloutMatch && <FlagsPage key={session.user.teamId} />}
+        {session && !accountView && !rolloutMatch && <FlagsPage key={session.user.teamId} csrfToken={session.csrfToken} />}
         {session && accountView && (
           <section className="panel" aria-labelledby="account-heading">
             <h1 id="account-heading">Your account</h1>
