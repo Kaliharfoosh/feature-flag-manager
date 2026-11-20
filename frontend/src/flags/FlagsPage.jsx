@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import './FlagsPage.css'
 import CreateFlagDialog from './CreateFlagDialog.jsx'
-import { API_BASE, CREDENTIALS } from '../apiBase'
+import { fetchFlags, getFlag, toggleEnvironment } from './api'
 
 const environments = [
   ['dev', 'Development'],
@@ -19,21 +19,75 @@ function EnvironmentStatus({ enabled }) {
   )
 }
 
-function RolloutChart({ flag, onClose }) {
+function RolloutChart({ flag, role, csrfToken, onUpdated, onClose }) {
   const dialog = useRef(null)
+  const saving = useRef(false)
+  const [pending, setPending] = useState(false)
+  const [needsReload, setNeedsReload] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  async function changeEnvironment(env, label) {
+    if (saving.current) return
+    saving.current = true
+    setPending(true)
+    setError('')
+    setNotice('')
+    try {
+      const changed = await toggleEnvironment(flag.id, env, flag.environments[env], csrfToken)
+      setNotice(`${label} is now ${changed.enabled ? 'On' : 'Off'}.`)
+      // The toggle is already saved. Keep its confirmed value if the refresh fails.
+      onUpdated({
+        ...flag,
+        environments: { ...flag.environments, [env]: { ...flag.environments[env], enabled: changed.enabled, version: changed.version } },
+      })
+      try {
+        onUpdated(await getFlag(flag.id))
+      } catch {
+        setNeedsReload(true)
+        setError('The change was saved. Reload details to get the latest data.')
+      }
+    } catch (error) {
+      setError(error.message)
+      if (error.code === 'STALE_VERSION') setNeedsReload(true)
+    } finally {
+      saving.current = false
+      setPending(false)
+    }
+  }
+
+  async function reloadDetails() {
+    if (saving.current) return
+    saving.current = true
+    setPending(true)
+    setError('')
+    setNotice('')
+    try {
+      onUpdated(await getFlag(flag.id))
+      setNeedsReload(false)
+    } catch (error) {
+      setError(error.message)
+    } finally {
+      saving.current = false
+      setPending(false)
+    }
+  }
 
   useEffect(() => {
     if (!dialog.current.open) dialog.current.showModal()
   }, [])
 
   return (
-    <dialog ref={dialog} className="rollout-dialog" aria-labelledby="rollout-title" onClose={onClose}>
+    <dialog
+      ref={dialog} className="rollout-dialog" aria-labelledby="rollout-title" onClose={onClose}
+      onCancel={(event) => { if (saving.current) event.preventDefault() }}
+    >
       <header className="rollout-heading">
         <div>
           <code>{flag.key}</code>
           <h2 id="rollout-title">{flag.name}</h2>
         </div>
-        <button type="button" className="flag-button" onClick={() => dialog.current.close()}>Close</button>
+        <button type="button" className="flag-button" disabled={pending} onClick={() => dialog.current.close()}>Close</button>
       </header>
       {flag.description && <p className="rollout-description">{flag.description}</p>}
       <figure className="rollout-chart">
@@ -44,7 +98,15 @@ function RolloutChart({ flag, onClose }) {
             <div className="rollout-chart-row" key={key}>
               <div className="rollout-chart-label">
                 <strong>{label}</strong>
-                <EnvironmentStatus enabled={setting.enabled} />
+                <button
+                  type="button" role="switch" aria-label={label} aria-checked={setting.enabled}
+                  className="environment-switch"
+                  disabled={pending || needsReload || (key === 'prod' && role !== 'admin')}
+                  onClick={() => changeEnvironment(key, label)}
+                >
+                  <span className="switch-track" aria-hidden="true" />
+                  <span aria-hidden="true">{setting.enabled ? 'On' : 'Off'}</span>
+                </button>
                 <span className="rollout-chart-value">{percent.format(setting.percentage)}%</span>
               </div>
               <svg viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true">
@@ -56,27 +118,18 @@ function RolloutChart({ flag, onClose }) {
         })}
         <div className="rollout-scale" aria-hidden="true"><span>0%</span><span>50%</span><span>100%</span></div>
       </figure>
+      {role !== 'admin' && <p className="environment-permission">Production changes require an Admin.</p>}
+      {pending && <p className="toggle-notice" role="status">Updating…</p>}
+      {!pending && notice && <p className="toggle-notice" role="status">{notice}</p>}
+      {error && <p className="toggle-error" role="alert">{error}</p>}
+      {needsReload && <button type="button" className="flag-button" disabled={pending} onClick={reloadDetails}>Reload details</button>}
       {/* S2: opens the rollout page (percentages, allow/block lists, preview) */}
-      <Link className="rollout-manage" to={`/flags/${flag.id}/rollout`} state={{ flag }}>Manage rollout →</Link>
+      {!pending && <Link className="rollout-manage" to={`/flags/${flag.id}/rollout`} state={{ flag }}>Manage rollout →</Link>}
     </dialog>
   )
 }
 
-async function fetchFlags(filters, signal) {
-  const params = new URLSearchParams({ archived: String(filters.archived) })
-  if (filters.q) params.set('q', filters.q)
-  const cursor = filters.cursors.at(-1)
-  if (cursor) params.set('cursor', cursor)
-  const response = await fetch(`${API_BASE}/api/v1/flags?${params}`, { signal, credentials: CREDENTIALS })
-
-  if (response.status === 401) {
-    throw new Error('Your session has expired. Refresh the page to sign in again.')
-  }
-  if (!response.ok) throw new Error('Couldn’t load flags. Please try again.')
-  return response.json()
-}
-
-export default function FlagsPage({ csrfToken }) {
+export default function FlagsPage({ csrfToken, role }) {
   const [creating, setCreating] = useState(false)
   const [createdMessage, setCreatedMessage] = useState('')
   const [search, setSearch] = useState('')
@@ -103,6 +156,14 @@ export default function FlagsPage({ csrfToken }) {
     }, 250)
     return () => clearTimeout(timer)
   }, [search])
+
+  function handleUpdated(flag) {
+    setSelectedFlag(flag)
+    setResult((current) => current?.page ? {
+      ...current,
+      page: { ...current.page, items: current.page.items.map((item) => item.id === flag.id ? flag : item) },
+    } : current)
+  }
 
   function handleCreated(flag) {
     setCreating(false)
@@ -222,7 +283,7 @@ export default function FlagsPage({ csrfToken }) {
         )}
       </div>
       {creating && <CreateFlagDialog csrfToken={csrfToken} onCreated={handleCreated} onClose={() => setCreating(false)} />}
-      {selectedFlag && <RolloutChart flag={selectedFlag} onClose={() => setSelectedFlag(null)} />}
+      {selectedFlag && <RolloutChart flag={selectedFlag} role={role} csrfToken={csrfToken} onUpdated={handleUpdated} onClose={() => setSelectedFlag(null)} />}
     </section>
   )
 }
