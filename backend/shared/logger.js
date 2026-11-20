@@ -4,7 +4,7 @@ const pino = require('pino');
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
   redact: {
-    paths: ['req.headers.cookie', 'req.headers.authorization', 'password', '*.password', 'token', '*.token', 'key', '*.key'],
+    paths: ['req.headers.cookie', 'req.headers.authorization', 'req.headers["x-turnstile-token"]', 'TURNSTILE_SECRET_KEY', 'password', '*.password', 'token', '*.token', 'key', '*.key'],
     censor: '[REDACTED]',
   },
 });

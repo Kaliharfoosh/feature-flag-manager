@@ -173,3 +173,18 @@ Same IDs as the build plan. Record a screenshot or request id for each row in `e
 | PER-02 | Create a flag, wait for Neon to suspend (5 min idle), request again | First request slower, data intact | | |
 | PER-03 | `pg_dump` the database, restore into a fresh Neon branch, point `DATABASE_URL` at it, run G-01 and FLG-01 | Both pass on the restored copy | | |
 | PER-04 | Promote the previous deployment in Vercel | Old code serves within a minute; data unchanged | | |
+
+## Flag lifecycle and sign-in verification
+
+- A Developer edits a name and description, then a stale version is rejected with 409.
+- A Developer who sends `archived` or DELETE receives 403 with an `access.denied` event.
+- An Admin archives and restores a flag. Archiving forces evaluation Off, and the corresponding audit events persist.
+- DELETE of an active flag returns 409. DELETE of an archived flag returns 204, removes its environment and user-rule rows, and preserves audit history.
+- If the audit write fails, edits and deletions roll back, including cascaded rows.
+- A cross-team id returns 404 for PATCH and DELETE.
+- Missing, expired, replayed or mismatched Turnstile tokens receive 403 before password authentication. Cloudflare outages receive 503.
+- Failed verification creates `bot_check.failed`, increments Monitoring's `botCheckFailures`, and leaves password attempt counts unchanged.
+- Production refuses missing keys and dummy keys. Local and Preview checks use Cloudflare's official dummy pair and still call Siteverify.
+- The sign-in widget refreshes after a failed login, disables submission after expiry, and supports retry after a loading error.
+
+Production requires matching `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` settings for the deployed hostname. Set `TURNSTILE_HOSTNAMES` to the comma-separated hostnames to validate them on the server. Preview test widgets use Cloudflare's documented `example.com` dummy response. Scripted sign-in tests target a protected Preview deployment or local development.

@@ -185,3 +185,7 @@ input {
   .signed-in-header .secondary { font-size: .875rem; }
   .signed-in-header .workspace-nav { flex-basis: 100%; order: 1; }
 }
+
+.sign-in-verification { margin: .25rem 0 1rem; min-width: 0; }
+.sign-in-verification > div { display: flex; justify-content: center; }
+.verification-status { color: #585469; font-size: .85rem; }

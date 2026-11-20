@@ -96,6 +96,7 @@ async function monitoring(teamId, hours, db = pool) {
     `SELECT
        count(*) FILTER (WHERE action = 'login.failed')::int   AS failed_logins,
        count(*) FILTER (WHERE action = 'access.denied')::int  AS forbidden,
+       count(*) FILTER (WHERE action = 'bot_check.failed')::int AS bot_check_failures,
        count(*) FILTER (WHERE action = 'server.error')::int   AS server_errors,
        count(*) FILTER (WHERE ${RATE_LIMITED})::int AS rate_limited,
        (SELECT count(*) FROM alerts
@@ -135,6 +136,7 @@ async function monitoring(teamId, hours, db = pool) {
     hours,
     failedLogins: r.failed_logins,
     forbidden: r.forbidden,
+    botCheckFailures: r.bot_check_failures,
     serverErrors: r.server_errors,
     rateLimited: r.rate_limited,
     alertFailures: r.alert_failures,

@@ -42,8 +42,8 @@ function App() {
     setSessionCheck((attempt) => attempt + 1)
   }
 
-  async function handleSignIn(email, password) {
-    await signIn(email, password)
+  async function handleSignIn(email, password, turnstileToken) {
+    await signIn(email, password, turnstileToken)
     try {
       setSession(await getSession())
     } catch (error) {

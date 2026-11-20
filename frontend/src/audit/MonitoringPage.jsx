@@ -11,6 +11,7 @@ const when = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 
 const hourLabel = new Intl.DateTimeFormat('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' })
 
 const TILES = [
+  ['botCheckFailures', 'Bot checks failed'],
   ['failedLogins', 'Failed logins'],
   ['forbidden', 'Refused (403)'],
   ['serverErrors', 'Server errors (5xx)'],

@@ -4,7 +4,7 @@ const { randomUUID } = require('node:crypto');
 const { Client } = require('pg');
 const { pool } = require('../../../db/pool');
 const audit = require('../../../shared/audit');
-const { createFlag, toggleEnvironment } = require('../service');
+const { createFlag, toggleEnvironment, updateFlag, deleteFlag } = require('../service');
 
 const describeDb = process.env.DATABASE_URL ? describe : describe.skip;
 
@@ -141,5 +141,70 @@ describeDb('flag creation and environment toggles against PostgreSQL', () => {
     await client.query("DELETE FROM flag_environments WHERE flag_id = $1 AND env = 'dev'", [flag.id]);
     const changed = await toggleEnvironment(req, { flagId: flag.id, env: 'dev', enabled: true, version: 1 });
     expect(changed).toMatchObject({ enabled: true, version: 2 });
+  });
+
+  test('metadata editing preserves the key and environments and detects stale versions', async () => {
+    const flag = await createFlag(req, { key: 'edit-details', name: 'Original', description: '' });
+    const updated = await updateFlag(req, flag.id, { name: 'Revised', description: '<img src=x onerror=alert(1)>', version: 1 });
+    expect(updated).toMatchObject({ key: flag.key, name: 'Revised', version: 2 });
+    expect(updated.environments).toEqual(flag.environments);
+    await expect(updateFlag(req, flag.id, { name: 'Stale', version: 1 })).rejects.toMatchObject({ code: 'STALE_VERSION' });
+    const { rows: [event] } = await client.query("SELECT details FROM audit_events WHERE target_id = $1 AND action = 'flag.updated'", [flag.id]);
+    expect(event.details.before.name).toBe('Original');
+    expect(event.details.after.name).toBe('Revised');
+  });
+
+  test('only Admins can archive, restore or delete, and active flags cannot be deleted', async () => {
+    const flag = await createFlag(req, { key: 'archive-control', name: 'Archive control', description: '' });
+    await expect(updateFlag(req, flag.id, { archived: true, version: 1 })).rejects.toMatchObject({ status: 403 });
+    await expect(deleteFlag(req, flag.id)).rejects.toMatchObject({ status: 403 });
+    const admin = { ...req, user: { ...req.user, role: 'admin' } };
+    await expect(deleteFlag(admin, flag.id)).rejects.toMatchObject({ status: 409, code: 'CONFLICT' });
+    const archived = await updateFlag(admin, flag.id, { archived: true, version: 1 });
+    expect(archived).toMatchObject({ archived: true, version: 2 });
+    const restored = await updateFlag(admin, flag.id, { archived: false, version: 2 });
+    expect(restored).toMatchObject({ archived: false, version: 3 });
+    const { rows } = await client.query("SELECT action FROM audit_events WHERE target_id = $1 ORDER BY id", [flag.id]);
+    expect(rows.map(row => row.action)).toEqual(['flag.created', 'flag.archived', 'flag.unarchived']);
+  });
+
+  test('foreign-team ids remain 404 for editing, archiving and deletion', async () => {
+    const flag = await createFlag(req, { key: 'team-boundary', name: 'Team boundary', description: '' });
+    const other = { ...req, user: { ...req.user, teamId: randomUUID() } };
+    await expect(updateFlag(other, flag.id, { name: 'Other', version: 1 })).rejects.toMatchObject({ status: 404 });
+    await expect(updateFlag(other, flag.id, { archived: true, version: 1 })).rejects.toMatchObject({ status: 404 });
+    await expect(deleteFlag(other, flag.id)).rejects.toMatchObject({ status: 404 });
+  });
+
+  test('deleting an archived flag removes its children and retains audit history', async () => {
+    const flag = await createFlag(req, { key: 'delete-archived', name: 'Delete archived', description: '' });
+    const admin = { ...req, user: { ...req.user, role: 'admin' } };
+    await client.query("INSERT INTO user_rules (flag_id, env, user_id, kind) VALUES ($1, 'staging', 'user-1', 'allow')", [flag.id]);
+    await updateFlag(admin, flag.id, { archived: true, version: 1 });
+    await deleteFlag(admin, flag.id);
+    expect((await client.query('SELECT id FROM flags WHERE id = $1', [flag.id])).rows).toEqual([]);
+    for (const table of ['flag_environments', 'rollouts', 'user_rules']) {
+      expect((await client.query(`SELECT flag_id FROM ${table} WHERE flag_id = $1`, [flag.id])).rows).toEqual([]);
+    }
+    const { rows } = await client.query('SELECT action FROM audit_events WHERE target_id = $1 ORDER BY id', [flag.id]);
+    expect(rows.map(row => row.action)).toEqual(['flag.created', 'flag.archived', 'flag.deleted']);
+  });
+
+  test('audit failures roll back metadata edits and deletions including cascaded rows', async () => {
+    const flag = await createFlag(req, { key: 'lifecycle-rollback', name: 'Before', description: '' });
+    let failure = jest.spyOn(audit, 'record').mockRejectedValueOnce(new Error('audit unavailable'));
+    try {
+      await expect(updateFlag(req, flag.id, { name: 'After', version: 1 })).rejects.toThrow('audit unavailable');
+    } finally { failure.mockRestore(); }
+    expect((await client.query('SELECT name, version FROM flags WHERE id = $1', [flag.id])).rows[0]).toEqual({ name: 'Before', version: 1 });
+    const admin = { ...req, user: { ...req.user, role: 'admin' } };
+    await updateFlag(admin, flag.id, { archived: true, version: 1 });
+    failure = jest.spyOn(audit, 'record').mockRejectedValueOnce(new Error('audit unavailable'));
+    try {
+      await expect(deleteFlag(admin, flag.id)).rejects.toThrow('audit unavailable');
+    } finally { failure.mockRestore(); }
+    expect((await client.query('SELECT id FROM flags WHERE id = $1', [flag.id])).rows).toHaveLength(1);
+    expect((await client.query('SELECT env FROM flag_environments WHERE flag_id = $1', [flag.id])).rows).toHaveLength(3);
+    expect((await client.query('SELECT env FROM rollouts WHERE flag_id = $1', [flag.id])).rows).toHaveLength(3);
   });
 });

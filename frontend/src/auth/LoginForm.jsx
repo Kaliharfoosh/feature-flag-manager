@@ -1,24 +1,32 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import TurnstileChallenge from './TurnstileChallenge'
 
 export default function LoginForm({ onSignIn }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
+  const [turnstileToken, setTurnstileToken] = useState('')
+  const [challengeAttempt, setChallengeAttempt] = useState(0)
+  const submitting = useRef(false)
 
   async function handleSubmit(event) {
     event.preventDefault()
-    if (pending) return
+    if (submitting.current || !turnstileToken) return
 
+    submitting.current = true
     setPending(true)
     setError('')
     try {
-      await onSignIn(email.trim(), password)
+      await onSignIn(email.trim(), password, turnstileToken)
     } catch (error) {
       setError(error.message)
     } finally {
       setPassword('')
+      submitting.current = false
       setPending(false)
+      setTurnstileToken('')
+      setChallengeAttempt((current) => current + 1)
     }
   }
 
@@ -53,8 +61,9 @@ export default function LoginForm({ onSignIn }) {
           readOnly={pending}
         />
 
+        <TurnstileChallenge key={challengeAttempt} onToken={setTurnstileToken} />
         {error && <p className="error" role="alert">{error}</p>}
-        <button className="primary" type="submit" disabled={pending}>
+        <button className="primary" type="submit" disabled={pending || !turnstileToken}>
           {pending ? 'Signing in…' : 'Sign in'}
         </button>
       </form>

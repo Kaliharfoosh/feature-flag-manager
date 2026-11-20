@@ -1,3 +1,4 @@
+const { verifyTurnstile, getClientConfig } = require('../../middleware/turnstile');
 const bcrypt = require('bcryptjs');
 const { promisify } = require('node:util');
 const { z } = require('zod');
@@ -21,6 +22,8 @@ async function login(req, res) {
       code: 'VALIDATION_ERROR',
     });
   }
+
+  await verifyTurnstile(req, input.data.email);
 
   const { user, rateLimited, pendingAlerts } = await authenticate({
     ...input.data,
@@ -62,4 +65,8 @@ async function logout(req, res) {
   res.sendStatus(204);
 }
 
-module.exports = { login, me, logout };
+function config(req, res) {
+  res.json(getClientConfig());
+}
+
+module.exports = { login, me, logout, config };
