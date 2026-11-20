@@ -5,6 +5,7 @@ const { pool } = require('../../db/pool');
 const schema = require('./schema');
 const rollouts = require('./rollouts');
 const evaluations = require('./evaluations');
+const rules = require('./rules');
 const { evaluate } = require('./evaluate');
 const { hashKey, readBearer } = require('../../shared/api-keys');
 const audit = require('../../shared/audit');
@@ -14,18 +15,15 @@ function httpError(status, code, message) {
   return Object.assign(new Error(message), { status, code });
 }
 
-// PUT /rollouts/:flagId/:env  { percentage, version }
-// The team comes from the session (req.user.teamId), never from the client.
-async function putRollout(req, res) {
-  const { flagId, env } = schema.parseRolloutParams(req.params);
-  const { percentage, version } = schema.parseRolloutBody(req.body);
-
+// Runs work(client) between BEGIN and COMMIT; any error rolls everything back. After COMMIT,
+// alerts raised inside (a prod change) get their GitHub issue opened.
+async function inTransaction(req, work) {
   const client = await pool.connect();
   let releaseError;
   let result;
   try {
     await client.query('BEGIN');
-    result = await rollouts.setPercentage(client, req, { teamId: req.user.teamId, flagId, env, percentage, version });
+    result = await work(client);
     await client.query('COMMIT');
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch (failure) { releaseError = failure; }
@@ -33,10 +31,77 @@ async function putRollout(req, res) {
   } finally {
     client.release(releaseError);
   }
-
-  // A prod change raises an alert inside the transaction; its GitHub issue is opened after COMMIT.
   await github.deliverPending(req);
+  return result;
+}
+
+// Prod rule for routes where the env is only known after reading the body or the database
+// (POST /preview, DELETE /rules). Same result as requireRole('admin'): 403 + access.denied.
+async function adminOnlyForProd(req, env) {
+  if (env !== 'prod' || req.user.role === 'admin') return;
+  await audit.recordSecurity(req, 'access.denied', {
+    method: req.method,
+    path: req.originalUrl.split('?')[0],
+    requiredRole: 'admin',
+  });
+  throw httpError(403, 'FORBIDDEN', 'You do not have permission to do this.');
+}
+
+// GET /rollouts/:flagId
+async function getRollouts(req, res) {
+  const flagId = schema.parseFlagId(req.params.flagId);
+  const result = await rollouts.getRollouts(pool, req.user.teamId, flagId);
+  if (!result) throw httpError(404, 'NOT_FOUND', 'Flag not found.');
   res.json(result);
+}
+
+// PUT /rollouts/:flagId/:env  { percentage, version }
+// The team comes from the session (req.user.teamId), never from the client.
+async function putRollout(req, res) {
+  const { flagId, env } = schema.parseRolloutParams(req.params);
+  const { percentage, version } = schema.parseRolloutBody(req.body);
+  const result = await inTransaction(req, (client) => (
+    rollouts.setPercentage(client, req, { teamId: req.user.teamId, flagId, env, percentage, version })
+  ));
+  res.json(result);
+}
+
+// GET /rollouts/:flagId/:env/rules
+async function listRules(req, res) {
+  const { flagId, env } = schema.parseRolloutParams(req.params);
+  res.json({ items: await rules.listRules(pool, req.user.teamId, flagId, env) });
+}
+
+// POST /rollouts/:flagId/:env/rules  { userId, kind }
+async function addRule(req, res) {
+  const { flagId, env } = schema.parseRolloutParams(req.params);
+  const { userId, kind } = schema.parseRuleBody(req.body);
+  const rule = await inTransaction(req, (client) => (
+    rules.addRule(client, req, { teamId: req.user.teamId, flagId, env, userId, kind })
+  ));
+  res.status(201).json(rule);
+}
+
+// DELETE /rules/:ruleId. The rule's env decides the prod rule, so it is read first.
+async function deleteRule(req, res) {
+  const ruleId = schema.parseRuleId(req.params.ruleId);
+  const rule = await rules.findRule(pool, req.user.teamId, ruleId);
+  if (!rule) throw httpError(404, 'NOT_FOUND', 'Rule not found.');
+  await adminOnlyForProd(req, rule.env);
+  const removed = await inTransaction(req, (client) => rules.removeRule(client, req, rule));
+  if (!removed) throw httpError(404, 'NOT_FOUND', 'Rule not found.');
+  res.status(204).end();
+}
+
+// POST /preview  { flagKey, env, userId }: "would this user see the flag?" Reads only.
+// Same evaluate() and the same SQL as /evaluations, so the preview can never disagree with it.
+async function preview(req, res) {
+  const { flagKey, env, userId } = schema.parsePreviewBody(req.body);
+  await adminOnlyForProd(req, env);
+  const setting = await evaluations.loadSetting(pool, req.user.teamId, env, flagKey);
+  if (!setting) throw httpError(404, 'NOT_FOUND', 'Flag not found.');
+  const { enabled, reason, bucket } = evaluate(setting, flagKey, userId);
+  res.json({ flagKey, env, userId, enabled, reason, bucket });
 }
 
 // POST /evaluations  Authorization: Bearer ffm_stg_...  { flagKey, userId }
@@ -102,4 +167,4 @@ async function postEvaluation(req, res) {
   res.json({ flagKey, env: key.env, enabled });
 }
 
-module.exports = { putRollout, postEvaluation };
+module.exports = { getRollouts, putRollout, listRules, addRule, deleteRule, preview, postEvaluation };

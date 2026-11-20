@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react'
 import { getSession, signIn, signOut } from './auth/api.js'
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink, matchPath, useLocation } from 'react-router-dom'
 import LoginForm from './auth/LoginForm.jsx'
 import FlagsPage from './flags/FlagsPage.jsx'
+import RolloutPage from './rollouts/RolloutPage.jsx'
 import './App.css'
 
 function App() {
-  const accountView = useLocation().pathname === '/account'
+  const { pathname } = useLocation()
+  const accountView = pathname === '/account'
+  const rolloutMatch = matchPath('/flags/:flagId/rollout', pathname) // S2: rollout page
   const [session, setSession] = useState(undefined)
   const [sessionError, setSessionError] = useState('')
   const [sessionCheck, setSessionCheck] = useState(0)
@@ -109,7 +112,10 @@ function App() {
         {session === null && <LoginForm onSignIn={handleSignIn} />}
 
         {session && logoutError && <p className="workspace-error" role="alert">{logoutError}</p>}
-        {session && !accountView && <FlagsPage key={session.user.teamId} />}
+        {session && rolloutMatch && (
+          <RolloutPage key={rolloutMatch.params.flagId} flagId={rolloutMatch.params.flagId} session={session} />
+        )}
+        {session && !accountView && !rolloutMatch && <FlagsPage key={session.user.teamId} />}
         {session && accountView && (
           <section className="panel" aria-labelledby="account-heading">
             <h1 id="account-heading">Your account</h1>

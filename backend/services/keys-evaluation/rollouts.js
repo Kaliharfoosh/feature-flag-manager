@@ -99,4 +99,25 @@ async function setPercentage(tx, req, { teamId, flagId, env, percentage, version
   };
 }
 
-module.exports = { ENVS, createDefaults, setPercentage };
+// GET /rollouts/:flagId. Returns { flagId, environments: { dev: { percentage, version }, ... } }
+// or null when the team has no such flag. A missing rollout row reads as 0%, version 1: that is
+// exactly what PUT /rollouts creates for it, so the version the page sends back will match.
+async function getRollouts(db, teamId, flagId) {
+  const { rows } = await db.query(
+    `SELECT env.name AS env, r.percentage, r.version
+     FROM flags f
+     CROSS JOIN unnest($3::text[]) AS env(name)
+     LEFT JOIN rollouts r ON r.flag_id = f.id AND r.env = env.name
+     WHERE f.id = $1 AND f.team_id = $2`,
+    [flagId, teamId, ENVS],
+  );
+  if (rows.length === 0) return null;
+  const environments = {};
+  for (const env of ENVS) {
+    const row = rows.find((r) => r.env === env);
+    environments[env] = { percentage: Number(row?.percentage ?? 0), version: row?.version ?? 1 };
+  }
+  return { flagId, environments };
+}
+
+module.exports = { ENVS, createDefaults, setPercentage, getRollouts };
