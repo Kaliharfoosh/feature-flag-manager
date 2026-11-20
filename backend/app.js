@@ -21,6 +21,11 @@ if (process.env.CORS_ORIGINS) {
 app.use(require('./middleware/request-logger')); // time, method, path, requestId: never the body
 app.use(require('./middleware/require-json'));   // 415 when a body is not JSON (Lab 4)
 app.use(express.json({ limit: '10kb' }));
+
+// S2: client apps call this with an API key. It sits BEFORE the session on purpose: no cookie,
+// no CSRF, and a client app can never pick up or use a signed-in user's session.
+app.use('/api/v1/evaluations', require('./services/keys-evaluation/evaluation-routes'));
+
 app.use(session({
   store: new PgStore({ pool, tableName: 'session' }), // survives cold starts; table from migration 002
   secret: process.env.SESSION_SECRET,
@@ -44,7 +49,7 @@ app.get('/api/v1/health', async (req, res) => {
 // Service routers. Each owner uncomments their line when routes.js exists.
 app.use('/api/v1/auth', require('./services/auth/routes'));
 app.use('/api/v1/flags', require('./services/flags/routes'));
-// app.use('/api/v1', require('./services/keys-evaluation/routes'));       // S2
+app.use('/api/v1', require('./services/keys-evaluation/routes'));         // S2
 app.use('/api/v1', require('./services/audit-alerts/routes'));            // S3
 
 app.use(require('./middleware/not-found')); // 404 ROUTE_NOT_FOUND

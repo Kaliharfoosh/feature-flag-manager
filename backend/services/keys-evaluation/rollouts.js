@@ -6,6 +6,8 @@
 // use "UPDATE ... WHERE version = $n" and "0 rows updated" can only mean a stale version (409),
 // never a missing row.
 
+const audit = require('../../shared/audit');
+
 const ENVS = Object.freeze(['dev', 'staging', 'prod']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -43,4 +45,58 @@ async function createDefaults(tx, flagId) {
   return result;
 }
 
-module.exports = { ENVS, createDefaults };
+function httpError(status, code, message) {
+  return Object.assign(new Error(message), { status, code });
+}
+
+// PUT /rollouts/:flagId/:env. Runs on the caller's transaction client (BEGIN/COMMIT are in the
+// controller), so the new percentage and its audit row are saved together or not at all.
+// Returns { flagId, env, percentage, version, updatedAt }.
+//   404 NOT_FOUND      the flag does not exist or belongs to another team (never 403)
+//   409 STALE_VERSION  someone changed this rollout since the client read it
+async function setPercentage(tx, req, { teamId, flagId, env, percentage, version }) {
+  const { rows: [flag] } = await tx.query(
+    'SELECT id, key FROM flags WHERE id = $1 AND team_id = $2',
+    [flagId, teamId],
+  );
+  if (!flag) throw httpError(404, 'NOT_FOUND', 'Flag not found.');
+
+  // Flags made before createDefaults existed (for example the seed data) may have no rollout
+  // row yet. This adds the missing rows at 0%, version 1, and leaves existing rows alone.
+  await createDefaults(tx, flagId);
+
+  // FOR UPDATE locks the row until COMMIT, so two people saving at once cannot both win.
+  const { rows: [before] } = await tx.query(
+    'SELECT percentage, version FROM rollouts WHERE flag_id = $1 AND env = $2 FOR UPDATE',
+    [flagId, env],
+  );
+  if (before.version !== version) {
+    throw httpError(409, 'STALE_VERSION', 'This rollout was changed by someone else. Reload and try again.');
+  }
+
+  const { rows: [after] } = await tx.query(
+    `UPDATE rollouts SET percentage = $3, version = version + 1, updated_at = now()
+     WHERE flag_id = $1 AND env = $2
+     RETURNING percentage, version, updated_at AS "updatedAt"`,
+    [flagId, env, percentage],
+  );
+
+  // details.env = 'prod' is what makes S3's prod_change alert rule fire.
+  await audit.record(tx, req, {
+    action: 'rollout.updated',
+    targetType: 'rollout',
+    targetId: `${flagId}/${env}`,
+    details: { key: flag.key, env },
+    before: { percentage: Number(before.percentage) },
+    after: { percentage: Number(after.percentage) },
+  });
+
+  return {
+    flagId, env,
+    percentage: Number(after.percentage),
+    version: after.version,
+    updatedAt: after.updatedAt,
+  };
+}
+
+module.exports = { ENVS, createDefaults, setPercentage };
