@@ -51,4 +51,29 @@ function parseCreateBody(body) {
   return result.data;
 }
 
-module.exports = { parseListQuery, parseCreateBody, encodeCursor };
+const flagIdSchema = z.string().uuid();
+const environmentSchema = z.enum(['dev', 'staging', 'prod']);
+const toggleBody = z.object({ enabled: z.boolean(), version: z.number().int().min(1).max(2147483646) });
+
+function parseToggle(params, body) {
+  const parsed = z.object({
+    flagId: flagIdSchema, env: environmentSchema, body: toggleBody,
+  }).safeParse({ ...params, body });
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    throw Object.assign(new Error(`${issue.path.join('.')} ${issue.message}`), {
+      status: 400, code: 'VALIDATION_ERROR',
+    });
+  }
+  return { flagId: parsed.data.flagId, env: parsed.data.env, ...parsed.data.body };
+}
+
+function parseFlagId(id) {
+  const parsed = flagIdSchema.safeParse(id);
+  if (!parsed.success) {
+    throw Object.assign(new Error('flagId must be a valid UUID.'), { status: 400, code: 'VALIDATION_ERROR' });
+  }
+  return parsed.data;
+}
+
+module.exports = { parseListQuery, parseCreateBody, parseToggle, parseFlagId, encodeCursor };

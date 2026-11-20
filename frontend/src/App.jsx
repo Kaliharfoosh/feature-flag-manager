@@ -123,7 +123,7 @@ function App() {
         )}
         {session && auditView && <AuditPage key={session.user.teamId} session={session} />}
         {session && monitoringView && <MonitoringPage key={session.user.teamId} session={session} />}
-        {session && !accountView && !rolloutMatch && !auditView && !monitoringView && <FlagsPage key={session.user.teamId} csrfToken={session.csrfToken} />}
+        {session && !accountView && !rolloutMatch && !auditView && !monitoringView && <FlagsPage key={session.user.teamId} csrfToken={session.csrfToken} role={session.user.role} />}
         {session && accountView && (
           <section className="panel" aria-labelledby="account-heading">
             <h1 id="account-heading">Your account</h1>
