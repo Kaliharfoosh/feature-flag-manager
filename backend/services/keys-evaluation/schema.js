@@ -62,4 +62,49 @@ function parseEvaluationBody(body) {
   return result.data;
 }
 
-module.exports = { parseRolloutParams, parseRolloutBody, parseEvaluationBody, notFound };
+// GET /rollouts/:flagId
+function parseFlagId(flagId) {
+  if (!UUID.test(flagId ?? '')) throw notFound();
+  return flagId.toLowerCase();
+}
+
+// DELETE /rules/:ruleId
+function parseRuleId(ruleId) {
+  if (!UUID.test(ruleId ?? '')) throw notFound('Rule not found.');
+  return ruleId.toLowerCase();
+}
+
+// Not trimmed: rules must match the exact userId client apps send to /evaluations.
+const userId = z.string({ error: 'userId is required' })
+  .min(1, 'userId must be 1 to 100 characters')
+  .max(100, 'userId must be 1 to 100 characters');
+
+// POST /rollouts/:flagId/:env/rules
+const ruleBody = z.object({
+  userId,
+  kind: z.enum(['allow', 'block'], { error: 'kind must be allow or block' }),
+}).strict();
+
+function parseRuleBody(body) {
+  const result = ruleBody.safeParse(body ?? {});
+  if (!result.success) throw validationError(messageFor(result.error));
+  return result.data;
+}
+
+// POST /preview. Unlike /evaluations, a signed-in user chooses the env here.
+const previewBody = z.object({
+  flagKey: z.string({ error: 'flagKey is required' }).regex(FLAG_KEY, 'flagKey is not a valid flag key'),
+  env: z.enum(ENVS, { error: 'env must be dev, staging or prod' }),
+  userId,
+}).strict();
+
+function parsePreviewBody(body) {
+  const result = previewBody.safeParse(body ?? {});
+  if (!result.success) throw validationError(messageFor(result.error));
+  return result.data;
+}
+
+module.exports = {
+  parseRolloutParams, parseRolloutBody, parseEvaluationBody,
+  parseFlagId, parseRuleId, parseRuleBody, parsePreviewBody, notFound,
+};

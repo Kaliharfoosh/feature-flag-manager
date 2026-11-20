@@ -1,0 +1,160 @@
+/* Rollout page (S2). Reuses the flags page look (flags-intro, flags-card, flag-button, flag-state).
+   Everything is scoped under .rollout-view so the global form/input/.primary styles from App.css
+   (made for the sign-in form) do not leak in. */
+
+.rollout-view { display: grid; gap: 1.25rem; }
+
+.rollout-back { margin: 0; font-size: .9rem; }
+.rollout-back a { color: #4b2d86; font-weight: 650; text-decoration: none; }
+.rollout-back a:hover { text-decoration: underline; }
+
+.rollout-key {
+  display: inline-block;
+  margin-bottom: .5rem;
+  padding: .1rem .5rem;
+  border-radius: .35rem;
+  background: #ffffff1f;
+  color: #ebe2fa;
+  font-size: .85rem;
+  overflow-wrap: anywhere;
+}
+
+.rollout-heading-plain { margin: 0 0 .75rem; font-size: 1.15rem; letter-spacing: -.02em; }
+
+.rollout-view form { display: block; margin-top: 0; }
+.rollout-view label { margin: 0; }
+.rollout-view input { margin-bottom: 0; }
+.rollout-view .primary { width: auto; margin-top: 0; }
+.rollout-view button:disabled { cursor: not-allowed; }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---- percentage cards ---- */
+.env-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr));
+  gap: 1rem;
+}
+
+.env-card {
+  padding: 1.1rem 1.2rem 1.2rem;
+  border: 1px solid #e3e0ec;
+  border-radius: .9rem;
+  background: #fff;
+  box-shadow: 0 10px 28px #24264d0a;
+}
+
+.env-card-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.env-card-head h3 { margin: 0; font-size: 1rem; }
+
+.env-card-big {
+  margin: .6rem 0 .25rem;
+  font-size: 2.4rem;
+  font-weight: 750;
+  letter-spacing: -.04em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.env-card-big span { margin-left: .1rem; font-size: 1.2rem; color: #6c6880; }
+
+.env-card input[type='range'] {
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  accent-color: #5943c4;
+}
+
+.env-card-row { display: flex; align-items: center; gap: .5rem; margin-top: .6rem; }
+.env-card-row input[type='number'] { width: 6.5rem; min-height: 2.5rem; }
+.env-card-row input[aria-invalid='true'] { border-color: #c2414f; }
+.env-card-row .env-save { margin-left: auto; min-height: 2.5rem; }
+
+.env-note { margin: .6rem 0 0; font-size: .83rem; color: #585469; }
+.env-note-ok { color: #146248; }
+.env-note-error { color: #902633; }
+
+/* ---- rules and preview ---- */
+.rollout-section { padding: 1.2rem 1.25rem 1.25rem; }
+
+.rollout-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  justify-content: space-between;
+  gap: .75rem 1rem;
+}
+.rollout-section-head h2 { margin: 0; font-size: 1.15rem; letter-spacing: -.02em; }
+.rollout-section-head p { margin: .25rem 0 0; color: #585469; font-size: .9rem; max-width: 36rem; }
+
+.rollout-view .rule-form { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+.rule-form input { flex: 1 1 12rem; min-height: 2.6rem; }
+.rule-form select {
+  min-height: 2.6rem;
+  padding: .45rem .6rem;
+  border: 1px solid #8d95aa;
+  border-radius: .5rem;
+  background: #fff;
+  font: inherit;
+}
+.rule-form .primary { min-height: 2.6rem; }
+.rule-note { margin-top: .5rem; }
+
+.rule-list { list-style: none; margin: 1rem 0 0; padding: 0; border-top: 1px solid #ece9f2; }
+.rule-list li {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: .6rem 0;
+  border-bottom: 1px solid #ece9f2;
+}
+.rule-list code { overflow-wrap: anywhere; }
+.rule-list .flag-button { margin-left: auto; }
+
+.rule-kind {
+  padding: .1rem .5rem;
+  border-radius: 1rem;
+  font-size: .78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.rule-allow { background: #e2f5eb; color: #146248; }
+.rule-block { background: #fde7ea; color: #902633; }
+
+.preview-result {
+  margin-top: 1rem;
+  padding: .9rem 1rem;
+  border-radius: .7rem;
+  border: 1px solid #e3e0ec;
+  background: #f7f6fa;
+}
+.preview-on { border-color: #b9e3cc; background: #f0faf4; }
+.preview-result p { margin: 0; }
+.preview-result p + p { margin-top: .3rem; color: #585469; font-size: .9rem; }
+.preview-answer { font-weight: 700; }
+.preview-bucket { font-variant-numeric: tabular-nums; }
+
+@media (max-width: 34rem) {
+  .rule-form .primary { flex: 1 0 100%; }
+}
+
+/* "Manage rollout →" link inside the flags page's rollout dialog */
+.rollout-manage {
+  display: inline-block;
+  margin-top: 1.1rem;
+  padding: .5rem .85rem;
+  border-radius: .5rem;
+  background: #5943c4;
+  color: #fff;
+  font-weight: 650;
+  text-decoration: none;
+}
+.rollout-manage:hover { background: #4833a7; }

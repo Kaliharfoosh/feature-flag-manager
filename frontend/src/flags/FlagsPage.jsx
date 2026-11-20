@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import './FlagsPage.css'
 import { API_BASE, CREDENTIALS } from '../apiBase'
 
@@ -54,6 +55,8 @@ function RolloutChart({ flag, onClose }) {
         })}
         <div className="rollout-scale" aria-hidden="true"><span>0%</span><span>50%</span><span>100%</span></div>
       </figure>
+      {/* S2: opens the rollout page (percentages, allow/block lists, preview) */}
+      <Link className="rollout-manage" to={`/flags/${flag.id}/rollout`} state={{ flag }}>Manage rollout →</Link>
     </dialog>
   )
 }
