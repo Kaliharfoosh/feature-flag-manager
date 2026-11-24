@@ -122,6 +122,21 @@ describeDb('rollouts and evaluations against Postgres', () => {
       expect(await evaluations.loadSetting(client, otherTeamId, 'staging', 'it-checkout')).toBeNull();
     });
 
+    test('loadSettings reads many flags of the team in one query, only for that env', async () => {
+      await client.query(
+        "INSERT INTO flags (team_id, key, name) VALUES ($1, 'it-gift-wrap', 'Gift wrap'), ($2, 'it-other-team', 'Other')",
+        [teamId, otherTeamId],
+      );
+      await client.query("UPDATE flag_environments SET enabled = true WHERE flag_id = $1 AND env = 'prod'", [flagId]);
+      await client.query("INSERT INTO user_rules (flag_id, env, user_id, kind) VALUES ($1, 'staging', 'u-allow', 'allow')", [flagId]);
+      const settings = await evaluations.loadSettings(client, teamId, 'staging', ['it-checkout', 'it-gift-wrap', 'it-other-team', 'nope']);
+      expect([...settings.keys()].sort()).toEqual(['it-checkout', 'it-gift-wrap']);
+      expect(settings.get('it-checkout')).toEqual({ archived: false, enabled: false, percentage: '0.00', allow: ['u-allow'], block: [] });
+      // it-gift-wrap has no environment or rollout rows: off and 0%
+      expect(settings.get('it-gift-wrap')).toMatchObject({ enabled: false, allow: [], block: [] });
+      expect(Number(settings.get('it-gift-wrap').percentage)).toBe(0);
+    });
+
     test('countRequest: 120 allowed, the 121st is the first refusal, then refused without writing', async () => {
       const { id } = await evaluations.findKey(client, key.keyHash);
       for (let i = 0; i < evaluations.RATE_LIMIT; i += 1) {

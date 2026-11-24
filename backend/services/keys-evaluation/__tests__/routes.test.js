@@ -52,6 +52,9 @@ function fakeQuery(sql, params = []) {
     db.usage += 1;
     return { rows: [{ count: db.usage }] };
   }
+  if (sql.includes('FROM flags f') && Array.isArray(params[2])) { // loadSettings (batch)
+    return { rows: params[2].filter((k) => db.batch[k]).map((k) => ({ key: k, ...db.batch[k] })) };
+  }
   if (sql.includes('FROM flags f')) return { rows: params[2] === 'new-checkout' ? [db.setting] : [] };
   return { rows: [] };
 }
@@ -75,6 +78,12 @@ beforeEach(() => {
     usage: 0, // requests this key has made this minute
     key: { ...key, env: 'staging', revoked: false },
     setting: { archived: false, enabled: true, percentage: '100.00', allow: [], block: [] },
+    // the team's flags for the batch tests
+    batch: {
+      'new-checkout': { archived: false, enabled: true, percentage: '0.00', allow: ['u-beta-1'], block: [] },
+      'gift-wrap': { archived: false, enabled: true, percentage: '100.00', allow: [], block: ['u-fraud-77'] },
+      'paypal-v1': { archived: true, enabled: true, percentage: '100.00', allow: [], block: [] },
+    },
   };
   authService.findById.mockImplementation(async (id) => Object.values(users).find((u) => u.id === id));
   pool.query.mockImplementation(async (sql, params) => fakeQuery(sql, params));
@@ -262,5 +271,84 @@ describe('POST /evaluations', () => {
     const res = await call({ flagKey: 'new-checkout', userId: 'u-1' }).expect(200);
     expect(res.body.enabled).toBe(true);
     expect(pool.query.mock.calls.some(([sql]) => sql.startsWith('UPDATE api_keys'))).toBe(true);
+  });
+});
+
+describe('POST /evaluations/batch', () => {
+  const url = `${api}/evaluations/batch`;
+  const call = (body, key = db.key.raw) => {
+    const req = request(app).post(url);
+    if (key) req.set('Authorization', `Bearer ${key}`);
+    return req.send(body);
+  };
+  const flagKeys = ['new-checkout', 'gift-wrap', 'paypal-v1', 'loyalty-points'];
+
+  test('200: every flag for one user, unknown flags in notFound, all in one query', async () => {
+    const res = await call({ userId: 'u-981', flagKeys }).expect(200);
+    expect(res.body).toEqual({
+      env: 'staging',
+      flags: { 'new-checkout': false, 'gift-wrap': true, 'paypal-v1': false }, // archived is always off
+      notFound: ['loyalty-points'],
+    });
+    expect(res.headers['set-cookie']).toBeUndefined();
+    expect(res.headers['cache-control']).toBe('no-store');
+    expect(pool.query.mock.calls.filter(([sql]) => sql.includes('FROM flags f'))).toHaveLength(1);
+  });
+
+  test('allow and block lists work per user, like the single evaluation', async () => {
+    const beta = await call({ userId: 'u-beta-1', flagKeys }).expect(200);
+    expect(beta.body.flags['new-checkout']).toBe(true); // allowlisted at 0%
+    const fraud = await call({ userId: 'u-fraud-77', flagKeys }).expect(200);
+    expect(fraud.body.flags['gift-wrap']).toBe(false); // blocklisted at 100%
+  });
+
+  test('a batch counts as ONE request for the rate limit', async () => {
+    await call({ userId: 'u-1', flagKeys }).expect(200);
+    expect(db.usage).toBe(1);
+  });
+
+  test('400 when the body tries to choose the env (ST-06)', async () => {
+    const res = await call({ userId: 'u-1', flagKeys, env: 'prod' }).expect(400);
+    expect(res.body.error).toMatchObject({ code: 'VALIDATION_ERROR', message: 'Unknown field: env.' });
+  });
+
+  test.each([
+    [{ flagKeys }, 'userId is required'],
+    [{ userId: 'u-1' }, 'flagKeys must be a list of flag keys'],
+    [{ userId: 'u-1', flagKeys: 'new-checkout' }, 'flagKeys must be a list of flag keys'],
+    [{ userId: 'u-1', flagKeys: [] }, 'flagKeys must have 1 to 50 flag keys'],
+    [{ userId: 'u-1', flagKeys: Array.from({ length: 51 }, (_, i) => `flag-${i}`) }, 'flagKeys must have 1 to 50 flag keys'],
+    [{ userId: 'u-1', flagKeys: ['Bad Key!'] }, 'each flagKey must be a valid flag key'],
+    [{ userId: 'u-1', flagKeys: ['gift-wrap', 'gift-wrap'] }, 'flagKeys must not repeat a flag key'],
+    [{ userId: '', flagKeys }, 'userId must be 1 to 100 characters'],
+  ])('400 VALIDATION_ERROR for %j', async (body, message) => {
+    const res = await call(body).expect(400);
+    expect(res.body.error).toMatchObject({ code: 'VALIDATION_ERROR', message });
+  });
+
+  test('401 without a key or with an unknown key, before the body is looked at', async () => {
+    await call({ junk: true }, null).expect(401);
+    await call({ userId: 'u-1', flagKeys }, newKey('staging').raw).expect(401);
+  });
+
+  test('401 for a revoked key (ST-07), logged as access.denied', async () => {
+    db.key.revoked = true;
+    await call({ userId: 'u-1', flagKeys }).expect(401);
+    expect(auditActions()).toEqual(['access.denied']);
+  });
+
+  test('429 when the key is over the limit, and the flags are not read', async () => {
+    db.usage = 500;
+    const res = await call({ userId: 'u-1', flagKeys }).expect(429);
+    expect(res.headers['retry-after']).toBeDefined();
+    expect(pool.query.mock.calls.some(([sql]) => sql.includes('FROM flags f'))).toBe(false);
+  });
+
+  test('503 DB_UNAVAILABLE when the database is down', async () => {
+    pool.query.mockImplementation(async (sql) => {
+      if (sql.startsWith('INSERT INTO audit_events')) return { rows: [{ id: '1', at: new Date() }] };
+      throw new Error('connect ECONNREFUSED');
+    });
+    await call({ userId: 'u-1', flagKeys }).expect(503);
   });
 });

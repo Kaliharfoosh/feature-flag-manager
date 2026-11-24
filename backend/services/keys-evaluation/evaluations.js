@@ -32,6 +32,28 @@ async function loadSetting(db, teamId, env, flagKey) {
   return setting ?? null;
 }
 
+// The same as loadSetting, for many flags of one team and environment in ONE query
+// (POST /evaluations/batch). Returns a Map flagKey -> setting; flags the team does not have are
+// simply not in the Map.
+async function loadSettings(db, teamId, env, flagKeys) {
+  const { rows } = await db.query(
+    `SELECT f.key,
+            f.archived_at IS NOT NULL AS archived,
+            COALESCE(fe.enabled, false) AS enabled,
+            COALESCE(r.percentage, 0) AS percentage,
+            COALESCE(array_agg(ur.user_id) FILTER (WHERE ur.kind = 'allow'), '{}') AS allow,
+            COALESCE(array_agg(ur.user_id) FILTER (WHERE ur.kind = 'block'), '{}') AS block
+     FROM flags f
+     LEFT JOIN flag_environments fe ON fe.flag_id = f.id AND fe.env = $2
+     LEFT JOIN rollouts r ON r.flag_id = f.id AND r.env = $2
+     LEFT JOIN user_rules ur ON ur.flag_id = f.id AND ur.env = $2
+     WHERE f.team_id = $1 AND f.key = ANY($3::text[])
+     GROUP BY f.id, f.key, fe.enabled, r.percentage`,
+    [teamId, env, flagKeys],
+  );
+  return new Map(rows.map(({ key, ...setting }) => [key, setting]));
+}
+
 // lastUsedAt is updated at most once a minute per key, not on every call, so a busy client app
 // does not turn every read into a write (free-tier compute).
 async function touchKey(db, keyId) {
@@ -76,4 +98,4 @@ function secondsToNextWindow(now = Date.now()) {
   return Math.max(1, Math.ceil((60000 - (now % 60000)) / 1000));
 }
 
-module.exports = { findKey, loadSetting, touchKey, countRequest, secondsToNextWindow, RATE_LIMIT };
+module.exports = { findKey, loadSetting, loadSettings, touchKey, countRequest, secondsToNextWindow, RATE_LIMIT };

@@ -113,6 +113,10 @@ Columns: **ID** · **Request** · **Expected** · **Actual result** · **Pass/Fa
 | ROL-31 | 130 evaluations in one minute with one key | The last ones answer 429 `RATE_LIMITED` | | |
 | ROL-32 | `POST /evaluations` while the DB is unreachable | 503 `DB_UNAVAILABLE`; the demo client shows the feature off | | |
 | ROL-33 | Neon `api_keys` table | Holds `key_hash` and `prefix` only; the raw key appears nowhere | | |
+| ROL-34 | `POST /evaluations/batch` with the staging key, `{ userId: "u-981", flagKeys: [<25 store flags>, "loyalty-points"] }` | 200 `{ env: "staging", flags: {…}, notFound: ["loyalty-points"] }`; archived flags are `false`; key usage + 1 only | | |
+| ROL-35 | Same with `"env": "prod"` added, with 51 keys, and with a repeated key | 400 each, with a field message | | |
+| ROL-36 | Demo store: shopper `u-beta-1` and `u-fraud-77` | `u-beta-1` gets the new checkout (allowlisted); `u-fraud-77` gets the classic one (blocklisted) | | |
+| ROL-37 | Demo store: change `gift-wrap` staging in the FFM, then press "Refresh flags" in the store | The gift-wrap option appears/disappears with no redeploy | | |
 
 ## S3 · Audit and Monitoring
 
