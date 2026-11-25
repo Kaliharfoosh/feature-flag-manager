@@ -66,7 +66,17 @@ async function touchKey(db, keyId) {
 
 // Per-key rate limit: RATE_LIMIT requests per minute (API contract: 120). Counted in the database
 // so every serverless instance shares one count. Fixed one-minute windows.
-const RATE_LIMIT = 120;
+const DEFAULT_RATE_LIMIT = 120;
+
+// Load tests only (Lab 8): EVAL_RATE_LIMIT raises the limit on your PC, so k6 measures the
+// service and not the limiter (all k6 users share one key). It is IGNORED when NODE_ENV is
+// production, so a stray setting on Vercel can never weaken the real limit.
+function rateLimitFromEnv(env = process.env) {
+  if (env.NODE_ENV === 'production' || !env.EVAL_RATE_LIMIT) return DEFAULT_RATE_LIMIT;
+  const limit = Number(env.EVAL_RATE_LIMIT);
+  return Number.isInteger(limit) && limit >= 1 && limit <= 1000000 ? limit : DEFAULT_RATE_LIMIT;
+}
+const RATE_LIMIT = rateLimitFromEnv();
 
 // Counts this request and returns { allowed, firstRefusal }.
 //   allowed       false once the key has used up this minute
@@ -98,4 +108,6 @@ function secondsToNextWindow(now = Date.now()) {
   return Math.max(1, Math.ceil((60000 - (now % 60000)) / 1000));
 }
 
-module.exports = { findKey, loadSetting, loadSettings, touchKey, countRequest, secondsToNextWindow, RATE_LIMIT };
+module.exports = {
+  findKey, loadSetting, loadSettings, touchKey, countRequest, secondsToNextWindow, rateLimitFromEnv, RATE_LIMIT,
+};

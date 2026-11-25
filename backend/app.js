@@ -9,6 +9,11 @@ const { pool } = require('./db/pool');
 const app = express();
 app.use(helmet());
 
+// Lab 8 scale test only: each local copy of the API gets a name (ffm-task-1, -2, -3) and says
+// which copy answered, so round robin and failover can be seen. Not set on Vercel.
+const instanceId = process.env.INSTANCE_ID;
+if (instanceId) app.use((req, res, next) => { res.set('X-Instance-Id', instanceId); next(); });
+
 // Lab 5/7: CORS. Only switched on where the frontend lives on a different address
 // (Floci: the S3 website). Allowed origins come from CORS_ORIGINS (comma-separated).
 // On Vercel CORS_ORIGINS is not set: frontend and API share one address, so no CORS is needed
@@ -39,7 +44,7 @@ app.get('/api/v1/health', async (req, res) => {
   const commit = process.env.VERCEL_GIT_COMMIT_SHA ?? 'local';
   try {
     await pool.query('select 1');
-    res.json({ status: 'ok', db: 'ok', commit });
+    res.json({ status: 'ok', db: 'ok', commit, ...(instanceId && { instanceId }) });
   } catch (err) {
     req.log.error({ err }, 'health: database unreachable');
     res.status(503).json({ status: 'degraded', db: 'down', commit });
