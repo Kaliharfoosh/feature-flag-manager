@@ -110,7 +110,7 @@ Columns: **ID** · **Request** · **Expected** · **Actual result** · **Pass/Fa
 | ROL-28 | `POST /evaluations` with a made-up key | 401, same message as ROL-27 | | |
 | ROL-29 | `POST /evaluations` with a staging key for a flag that is only configured in prod | Evaluates staging only: result reflects the staging settings, never prod | | |
 | ROL-30 | `DELETE /keys/:id` then `POST /evaluations` with that key | 204, then 401; audit `key.revoked` | | |
-| ROL-31 | 130 evaluations in one minute with one key | The last ones answer 429 `RATE_LIMITED` | | |
+| ROL-31 | 130 evaluations in one minute with one key | The last ones answer 429 `RATE_LIMITED` | Local, k6 Run C (150 requests, 10 users at once): 120 × 200, 30 × 429 with `Retry-After`, one `rate_limit.hit` row. See `docs/load-test-results.md` | Pass |
 | ROL-32 | `POST /evaluations` while the DB is unreachable | 503 `DB_UNAVAILABLE`; the demo client shows the feature off | | |
 | ROL-33 | Neon `api_keys` table | Holds `key_hash` and `prefix` only; the raw key appears nowhere | | |
 | ROL-34 | `POST /evaluations/batch` with the staging key, `{ userId: "u-981", flagKeys: [<25 store flags>, "loyalty-points"] }` | 200 `{ env: "staging", flags: {…}, notFound: ["loyalty-points"] }`; archived flags are `false`; key usage + 1 only | | |

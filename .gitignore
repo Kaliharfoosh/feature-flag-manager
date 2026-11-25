@@ -6,3 +6,6 @@ frontend/dist/
 .vercel/
 .idea/
 build/
+
+# Lab 8 scale test: process ids and logs of the local copies
+infra/floci/lab8/.run/

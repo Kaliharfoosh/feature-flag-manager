@@ -1,0 +1,16 @@
+$ node infra/floci/lab8/scale-test.js status
+Floci ECS ffm-api-service: desired count, task definition = 3	arn:aws:ecs:us-east-1:000000000000:task-definition/ffm-api-task:3
+Floci ffm-tg targets (ports): 3001	3002	3003
+Floci auto scaling min, max = 1	4
+local ffm-task-1: pid 41808 running
+local ffm-task-2: pid 40024 running
+local ffm-task-3: pid 38864 running
+local lb: pid 18020 running
+
+$ 6 x GET http://localhost:8080/api/v1/health (round robin)
+"instanceId":"ffm-task-2"
+"instanceId":"ffm-task-3"
+"instanceId":"ffm-task-1"
+"instanceId":"ffm-task-2"
+"instanceId":"ffm-task-3"
+"instanceId":"ffm-task-1"

@@ -1,0 +1,3 @@
+kill at 01:18:37 UTC
+[scale-test] stopped ffm-task-2 (pid 40024)
+[scale-test] ffm-task-2 crashed on purpose. The load balancer skips it after the next failed request or health check (3 s).

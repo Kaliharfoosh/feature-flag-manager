@@ -1,0 +1,43 @@
+
+
+  █ THRESHOLDS 
+
+    http_req_failed
+    ✓ 'rate==0' rate=0.00%
+
+    status_200
+    ✓ 'count<=120' count=120
+
+    status_429
+    ✓ 'count>=1' count=30
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 60      342.618289/s
+    checks_succeeded...: 100.00% 60 out of 60
+    checks_failed......: 0.00%   0 out of 60
+
+    ✓ 429 has Retry-After (1-60 s)
+    ✓ 429 code is RATE_LIMITED
+
+    CUSTOM
+    status_200.....................: 120    685.236578/s
+    status_429.....................: 30     171.309144/s
+
+    HTTP
+    http_req_duration..............: avg=10.94ms min=4.55ms med=9.98ms  max=29.38ms p(90)=13.59ms p(95)=26.49ms
+      { expected_response:true }...: avg=10.94ms min=4.55ms med=9.98ms  max=29.38ms p(90)=13.59ms p(95)=26.49ms
+    http_req_failed................: 0.00%  0 out of 150
+    http_reqs......................: 150    856.545722/s
+
+    EXECUTION
+    iteration_duration.............: avg=11.44ms min=4.55ms med=10.09ms max=36.18ms p(90)=13.59ms p(95)=33.29ms
+    iterations.....................: 150    856.545722/s
+
+    NETWORK
+    data_received..................: 155 kB 887 kB/s
+    data_sent......................: 37 kB  211 kB/s
+
+
+

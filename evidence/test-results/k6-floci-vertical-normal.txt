@@ -1,0 +1,55 @@
+
+
+  █ THRESHOLDS 
+
+    checks
+    ✓ 'rate>0.99' rate=100.00%
+
+    http_req_duration
+    ✓ 'p(95)<500' p(95)=9.48ms
+
+      {endpoint:batch}
+      ✓ 'p(95)<500' p(95)=9.92ms
+
+      {endpoint:single}
+      ✓ 'p(95)<500' p(95)=9.37ms
+
+    http_req_failed
+    ✓ 'rate<0.05' rate=0.00%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 3002    33.343542/s
+    checks_succeeded...: 100.00% 3002 out of 3002
+    checks_failed......: 0.00%   0 out of 3002
+
+    ✓ batch: 200
+    ✓ batch: every flag answered
+    ✓ single: 200
+    ✓ single: has enabled
+
+    CUSTOM
+    served_by_ffm_task_vertical....: 1501   16.671771/s
+    single_flag_enabled............: 51.37% 523 out of 1018
+
+    HTTP
+    http_req_duration..............: avg=5.2ms  med=4.43ms p(90)=8.64ms p(95)=9.48ms max=21.16ms
+      { endpoint:batch }...........: avg=5.51ms med=4.67ms p(90)=9.02ms p(95)=9.92ms max=21.16ms
+      { endpoint:single }..........: avg=5.07ms med=4.28ms p(90)=8.57ms p(95)=9.37ms max=15.94ms
+      { expected_response:true }...: avg=5.2ms  med=4.43ms p(90)=8.64ms p(95)=9.48ms max=21.16ms
+    http_req_failed................: 0.00%  0 out of 1502
+    http_reqs......................: 1502   16.682878/s
+
+    EXECUTION
+    iteration_duration.............: avg=1.01s  med=1s     p(90)=1.4s   p(95)=1.45s  max=1.5s   
+    iterations.....................: 1501   16.671771/s
+    vus............................: 2      min=1           max=20
+    vus_max........................: 20     min=20          max=20
+
+    NETWORK
+    data_received..................: 1.9 MB 21 kB/s
+    data_sent......................: 608 kB 6.8 kB/s
+
+
+

@@ -1,0 +1,46 @@
+
+
+  █ THRESHOLDS 
+
+    http_req_failed
+    ✓ 'rate==0' rate=0.00%
+
+    status_200
+    ✓ 'count<=120' count=120
+
+    status_429
+    ✓ 'count>=1' count=30
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 60      431.039437/s
+    checks_succeeded...: 100.00% 60 out of 60
+    checks_failed......: 0.00%   0 out of 60
+
+    ✓ 429 has Retry-After (1-60 s)
+    ✓ 429 code is RATE_LIMITED
+
+    CUSTOM
+    served_by_ffm_task_1...........: 50     359.199531/s
+    served_by_ffm_task_2...........: 50     359.199531/s
+    served_by_ffm_task_3...........: 50     359.199531/s
+    status_200.....................: 120    862.078874/s
+    status_429.....................: 30     215.519719/s
+
+    HTTP
+    http_req_duration..............: avg=8.5ms  min=2.01ms med=6.93ms max=40.51ms p(90)=15.98ms p(95)=19.89ms
+      { expected_response:true }...: avg=8.5ms  min=2.01ms med=6.93ms max=40.51ms p(90)=15.98ms p(95)=19.89ms
+    http_req_failed................: 0.00%  0 out of 150
+    http_reqs......................: 150    1077.598593/s
+
+    EXECUTION
+    iteration_duration.............: avg=9.02ms min=2.01ms med=6.93ms max=47.57ms p(90)=16.27ms p(95)=24.42ms
+    iterations.....................: 150    1077.598593/s
+
+    NETWORK
+    data_received..................: 164 kB 1.2 MB/s
+    data_sent......................: 37 kB  265 kB/s
+
+
+

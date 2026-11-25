@@ -1,0 +1,55 @@
+
+
+  █ THRESHOLDS 
+
+    checks
+    ✓ 'rate>0.99' rate=100.00%
+
+    http_req_duration
+    ✓ 'p(95)<500' p(95)=190.24ms
+
+      {endpoint:batch}
+      ✓ 'p(95)<500' p(95)=190.39ms
+
+      {endpoint:single}
+      ✓ 'p(95)<500' p(95)=190.17ms
+
+    http_req_failed
+    ✓ 'rate<0.05' rate=0.00%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 160198  2288.193074/s
+    checks_succeeded...: 100.00% 160198 out of 160198
+    checks_failed......: 0.00%   0 out of 160198
+
+    ✓ batch: 200
+    ✓ batch: every flag answered
+    ✓ single: 200
+    ✓ single: has enabled
+
+    CUSTOM
+    served_by_ffm_task_vertical....: 80099  1144.096537/s
+    single_flag_enabled............: 51.36% 28744 out of 55962
+
+    HTTP
+    http_req_duration..............: avg=96.68ms med=81.56ms p(90)=182.58ms p(95)=190.24ms max=219.06ms
+      { endpoint:batch }...........: avg=96.24ms med=80.93ms p(90)=182.75ms p(95)=190.39ms max=218.54ms
+      { endpoint:single }..........: avg=96.86ms med=82.04ms p(90)=182.51ms p(95)=190.17ms max=219.06ms
+      { expected_response:true }...: avg=96.68ms med=81.56ms p(90)=182.58ms p(95)=190.24ms max=219.06ms
+    http_req_failed................: 0.00%  0 out of 80100
+    http_reqs......................: 80100  1144.110821/s
+
+    EXECUTION
+    iteration_duration.............: avg=96.73ms med=81.63ms p(90)=182.64ms p(95)=190.31ms max=219.06ms
+    iterations.....................: 80099  1144.096537/s
+    vus............................: 1      min=1              max=200
+    vus_max........................: 200    min=200            max=200
+
+    NETWORK
+    data_received..................: 99 MB  1.4 MB/s
+    data_sent......................: 32 MB  452 kB/s
+
+
+
