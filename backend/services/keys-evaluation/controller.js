@@ -104,25 +104,26 @@ async function preview(req, res) {
   res.json({ flagKey, env, userId, enabled, reason, bucket });
 }
 
-// POST /evaluations  Authorization: Bearer ffm_stg_...  { flagKey, userId }
-// No session and no CSRF: a client app calls this, not a browser that is signed in.
-// The environment always comes from the key.
-async function postEvaluation(req, res) {
+// The part POST /evaluations and POST /evaluations/batch share: API key check, rate limit, then
+// load(key, body) reads the flag data. Returns { key, body, data }. No session and no CSRF: a
+// client app calls these, not a browser that is signed in. The environment always comes from the
+// key. parse() runs after the "is there a key at all" check, so a request with no key is a 401.
+async function withApiKey(req, res, parse, load) {
   res.set('Cache-Control', 'no-store');
 
   const raw = readBearer(req.get('authorization'));
   if (!raw) throw httpError(401, 'UNAUTHENTICATED', 'Send a valid API key as "Authorization: Bearer <key>".');
-  const { flagKey, userId } = schema.parseEvaluationBody(req.body);
+  const body = parse(req.body);
 
   let key;
-  let setting;
+  let data;
   let usage;
   try {
     key = await evaluations.findKey(pool, hashKey(raw));
     if (key && !key.revoked) {
       // Rate limit before the flag is read, so a flood costs as little as possible.
       usage = await evaluations.countRequest(pool, key.id);
-      if (usage.allowed) setting = await evaluations.loadSetting(pool, key.teamId, key.env, flagKey);
+      if (usage.allowed) data = await load(key, body);
     }
   } catch (err) {
     // The contract promises 503 here so client apps know to treat the flag as off.
@@ -151,11 +152,6 @@ async function postEvaluation(req, res) {
     throw httpError(429, 'RATE_LIMITED', `Too many requests for this API key (limit ${evaluations.RATE_LIMIT} per minute).`);
   }
 
-  // Another team's flag and a flag that does not exist look the same: 404.
-  if (!setting) throw httpError(404, 'NOT_FOUND', 'Flag not found.');
-
-  const { enabled } = evaluate(setting, flagKey, userId);
-
   // Best effort: a failed lastUsedAt update must never change the answer the client gets.
   // Awaited, because Vercel may freeze the function as soon as the response is sent.
   try {
@@ -163,8 +159,39 @@ async function postEvaluation(req, res) {
   } catch (err) {
     req.log.warn({ err }, 'evaluations: lastUsedAt not updated');
   }
-
-  res.json({ flagKey, env: key.env, enabled });
+  return { key, body, data };
 }
 
-module.exports = { getRollouts, putRollout, listRules, addRule, deleteRule, preview, postEvaluation };
+// POST /evaluations  Authorization: Bearer ffm_stg_...  { flagKey, userId }
+async function postEvaluation(req, res) {
+  const { key, body, data: setting } = await withApiKey(req, res, schema.parseEvaluationBody,
+    (k, { flagKey }) => evaluations.loadSetting(pool, k.teamId, k.env, flagKey));
+
+  // Another team's flag and a flag that does not exist look the same: 404.
+  if (!setting) throw httpError(404, 'NOT_FOUND', 'Flag not found.');
+
+  const { enabled } = evaluate(setting, body.flagKey, body.userId);
+  res.json({ flagKey: body.flagKey, env: key.env, enabled });
+}
+
+// POST /evaluations/batch  Authorization: Bearer ffm_stg_...  { userId, flagKeys: [...] }
+// Many flags for one user in one request (a client app's page needs ~25 at once). It counts as
+// ONE request for the rate limit and reads all the flags in ONE query. Flags the key's team does
+// not have are listed in notFound and never come back true, the same as a 404 for one flag.
+async function postEvaluationBatch(req, res) {
+  const { key, body, data: settings } = await withApiKey(req, res, schema.parseBatchBody,
+    (k, { flagKeys }) => evaluations.loadSettings(pool, k.teamId, k.env, flagKeys));
+
+  const flags = {};
+  const notFound = [];
+  for (const flagKey of body.flagKeys) {
+    const setting = settings.get(flagKey);
+    if (setting) flags[flagKey] = evaluate(setting, flagKey, body.userId).enabled;
+    else notFound.push(flagKey);
+  }
+  res.json({ env: key.env, flags, notFound });
+}
+
+module.exports = {
+  getRollouts, putRollout, listRules, addRule, deleteRule, preview, postEvaluation, postEvaluationBatch,
+};

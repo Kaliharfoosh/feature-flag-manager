@@ -1,6 +1,6 @@
 // Runs the demo shop on your PC: http://localhost:4000
 // Usage (from demo-client/):  npm start      (reads demo-client/.env, see .env.example)
-// On Vercel this file is not used: public/ is served as static files and api/flag.js is a function.
+// On Vercel this file is not used: public/ is served as static files and api/flags.js is a function.
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -19,7 +19,7 @@ const HEADERS = {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
-  if (url.pathname === '/api/flag') {
+  if (url.pathname === '/api/flags') {
     if (req.method !== 'GET') { res.writeHead(405, { Allow: 'GET' }); return res.end(); }
     const { status, body } = await handle(Object.fromEntries(url.searchParams), process.env);
     res.writeHead(status, { ...HEADERS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });

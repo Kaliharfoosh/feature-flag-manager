@@ -62,6 +62,28 @@ function parseEvaluationBody(body) {
   return result.data;
 }
 
+// POST /evaluations/batch. Like /evaluations: no env in the body (the key decides it).
+// 1 to 50 different flag keys, so one request can never ask for an unbounded amount of work.
+const MAX_BATCH = 50;
+const batchBody = z.object({
+  userId: z.string({ error: 'userId is required' })
+    .min(1, 'userId must be 1 to 100 characters')
+    .max(100, 'userId must be 1 to 100 characters'),
+  flagKeys: z.array(
+    z.string({ error: 'each flagKey must be a valid flag key' }).regex(FLAG_KEY, 'each flagKey must be a valid flag key'),
+    { error: 'flagKeys must be a list of flag keys' },
+  )
+    .min(1, `flagKeys must have 1 to ${MAX_BATCH} flag keys`)
+    .max(MAX_BATCH, `flagKeys must have 1 to ${MAX_BATCH} flag keys`)
+    .refine((keys) => new Set(keys).size === keys.length, 'flagKeys must not repeat a flag key'),
+}).strict();
+
+function parseBatchBody(body) {
+  const result = batchBody.safeParse(body ?? {});
+  if (!result.success) throw validationError(messageFor(result.error));
+  return result.data;
+}
+
 // GET /rollouts/:flagId
 function parseFlagId(flagId) {
   if (!UUID.test(flagId ?? '')) throw notFound();
@@ -105,6 +127,6 @@ function parsePreviewBody(body) {
 }
 
 module.exports = {
-  parseRolloutParams, parseRolloutBody, parseEvaluationBody,
+  parseRolloutParams, parseRolloutBody, parseEvaluationBody, parseBatchBody, MAX_BATCH,
   parseFlagId, parseRuleId, parseRuleBody, parsePreviewBody, notFound,
 };

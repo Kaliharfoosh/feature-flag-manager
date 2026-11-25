@@ -304,6 +304,21 @@ A complete flag as returned by the API:
 - Errors: `400`, `401 UNAUTHENTICATED` (missing, unknown or revoked key; the same answer for all three), `404 NOT_FOUND` (the key's team has no flag with that key), `429 RATE_LIMITED` (per key, 120 requests per minute; the response has a `Retry-After` header in seconds), `503 DB_UNAVAILABLE` (client apps must treat the flag as off).
 - Side effects: `lastUsedAt` is updated at most once a minute per key. Evaluations are not audited (it would flood the log). A revoked key is logged as `access.denied`; the first `429` in a minute is logged as `rate_limit.hit`, which the monitoring page counts.
 
+### POST /evaluations/batch — a client app asks for many flags for one user
+
+- Who: Scoped key, exactly like `POST /evaluations`. No cookie, no CSRF.
+- Body: `{ "userId": "u-981", "flagKeys": ["new-checkout", "gift-wrap", "apple-pay"] }`. 1 to 50 different flag keys. No `env` and no other field (`400`, ST-06).
+- `200 OK`:
+
+```json
+{ "env": "staging", "flags": { "new-checkout": true, "gift-wrap": true, "apple-pay": false }, "notFound": [] }
+```
+
+  Flags the key's team does not have are listed in `notFound` and are never `true` (the same as a `404` for one flag: another team's flag and a missing flag look the same).
+- Errors: the same as `POST /evaluations`, without the `404`.
+- Rate limit: a batch counts as **one** request of the key's 120 per minute. All the flags are read in one query, and the 50-flag cap keeps the cost of one request bounded.
+- Why it exists: a client page (the demo store) needs about 25 flags per shopper. One call per flag would use up the key's limit after a few page loads.
+
 Evaluation order: archived → `false`; env disabled → `false`; user blocklisted → `false`; user allowlisted → `true`; otherwise `sha256(flagKey + ":" + userId)` mod 10000 < percentage × 100.
 
 ### GET /keys — list keys (never the secret)

@@ -1,91 +1,709 @@
-// Browser side of the demo shop. It asks OUR server (/api/flag), never the Feature Flag Manager
+// Browser side of the Acme Store. It asks OUR server (/api/flags), never the Feature Flag Manager
 // directly, so no API key is ever in the browser. Text is set with textContent, never innerHTML.
-const FLAG = 'new-checkout';
+//
+// Every feature below is switched by one flag of the "Acme Web" team in the Feature Flag Manager.
+// on('gift-wrap') is true only when the Feature Flag Manager said so for this shopper; if it
+// could not be asked, everything is off and the shop falls back to its old behaviour.
 
+// Shoppers for the demo. The ids match the users the Feature Flag Manager's staging rules name
+// (backend/db/seed-demo.js), so the allow and block lists can be shown live.
+const SHOPPERS = [
+  { id: 'u-981', name: 'Amira', note: 'Regular shopper. The percentage rollouts decide her features.' },
+  { id: 'u-123', name: 'Ben', note: 'Regular shopper. The percentage rollouts decide his features.' },
+  { id: 'u-2048', name: 'Chloe', note: 'Regular shopper. The percentage rollouts decide her features.' },
+  { id: 'u-7', name: 'Dan', note: 'Regular shopper. The percentage rollouts decide his features.' },
+  { id: 'u-beta-1', name: 'Bea', note: 'Beta tester: seeded on the staging allow list of new-checkout.' },
+  { id: 'u-beta-2', name: 'Bilal', note: 'Beta tester: seeded on the staging allow list of new-checkout.' },
+  { id: 'u-fraud-77', name: 'Flagged account', note: 'Seeded on the staging block list of new-checkout.' },
+  { id: 'qa-iphone-1', name: 'QA iPhone', note: 'Test device: seeded on the staging allow list of apple-pay.' },
+  { id: 'data-team-1', name: 'Data team', note: 'Seeded on the staging allow list of recommendations-ml.' },
+];
+
+const PRODUCTS = [
+  { id: 'headphones', name: 'Wireless headphones', price: 79, cat: 'Audio', icon: '🎧', tone: 'a', rating: 4.6, reviews: 212, photos: 38, quote: 'Battery lasts all week.' },
+  { id: 'speaker', name: 'Bluetooth speaker', price: 39, cat: 'Audio', icon: '🔊', tone: 'b', rating: 4.3, reviews: 98, photos: 12, quote: 'Loud for its size.' },
+  { id: 'hoodie', name: 'Organic cotton hoodie', price: 45, cat: 'Clothing', icon: '🧥', tone: 'c', rating: 4.7, reviews: 341, photos: 77, quote: 'Soft, true to size.', sized: true },
+  { id: 'trainers', name: 'Running trainers', price: 65, cat: 'Clothing', icon: '👟', tone: 'd', rating: 4.5, reviews: 156, photos: 40, quote: 'Comfy from day one.', sized: true, outOfStock: true },
+  { id: 'cable', name: 'Braided charging cable', price: 12, cat: 'Accessories', icon: '🔌', tone: 'e', rating: 4.2, reviews: 520, photos: 21, quote: 'Does what it says.' },
+  { id: 'bottle', name: 'Steel water bottle', price: 18, cat: 'Accessories', icon: '🥤', tone: 'f', rating: 4.8, reviews: 87, photos: 9, quote: 'Keeps water cold all day.' },
+];
+const byId = Object.fromEntries(PRODUCTS.map((p) => [p.id, p]));
+
+const RATES = { GBP: 1, EUR: 1.17, USD: 1.27 }; // fixed demo rates
+const GIFT_WRAP = 3.5;
+const EXPRESS = 4.99;
+
+const state = {
+  shopper: SHOPPERS[0].id,
+  result: null,         // the last answer from /api/flags
+  flags: {},            // flagKey -> true/false for the current shopper
+  previous: null,       // flags before the last refresh of the SAME shopper (for "changed")
+  loading: false,
+  basket: new Map([['headphones', 1], ['cable', 1]]),
+  wishlist: new Set(['bottle']),
+  currency: 'GBP',
+  search: '',
+  category: 'All',
+  inStockOnly: false,
+  sort: 'featured',
+  openSizeGuide: null,
+  stockAlerts: new Set(),
+  wishlistLink: null,
+  storeOpen: false,
+  giftWrap: false,
+  giftMessage: '',
+  checkoutOpen: false,
+  step: 1,
+  guest: false,
+  postcode: '',
+  addressOptions: null,
+  address: '',
+  delivery: 'standard',
+  payment: 'card',
+  placedOrder: null,
+  returnStarted: false,
+  chatOpen: false,
+  newsletterShown: false,
+  newsletterDismissed: new Set(),
+  newsletterTimer: null,
+};
+
+const on = (key) => state.flags[key] === true;
+const shopper = () => SHOPPERS.find((s) => s.id === state.shopper) ?? { id: state.shopper, name: state.shopper, note: 'Any shopper id: the percentage rollouts decide the features.' };
+
+// ---------- small DOM helpers (textContent only) ----------
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
+    if (v === false || v === null || v === undefined) continue;
     if (k === 'class') node.className = v;
-    else node.setAttribute(k, v);
+    else if (k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2).toLowerCase(), v);
+    else if (k === 'value') node.value = v;
+    else if (k === 'checked') node.checked = Boolean(v);
+    else node.setAttribute(k, v === true ? '' : v);
   }
-  for (const child of children) node.append(child);
+  for (const child of children.flat()) {
+    if (child === null || child === undefined || child === false) continue;
+    node.append(child);
+  }
   return node;
 }
+const $ = (id) => document.getElementById(id);
+// replaceChildren that skips null/false, so conditional parts can be written inline.
+const fill = (node, ...kids) => node.replaceChildren(...kids.flat().filter((k) => k !== null && k !== undefined && k !== false));
 
-function newCheckout() {
-  return [
-    el('div', { class: 'tag tag-new' }, 'New checkout'),
-    el('h2', {}, 'One-page checkout'),
-    el('p', { class: 'muted' }, 'Everything on one screen, with your saved card.'),
-    el('ul', { class: 'summary' },
-      el('li', {}, el('span', {}, 'Deliver to'), el('span', {}, '12 Example Road, London')),
-      el('li', {}, el('span', {}, 'Delivery'), el('span', {}, 'Next day, free')),
-      el('li', {}, el('span', {}, 'Pay with'), el('span', {}, 'Saved card ending 4242'))),
-    el('button', { type: 'button', class: 'primary wide', disabled: '' }, 'Pay £91.00 (demo only)'),
-  ];
+// A small label naming the flag that switched a feature on (hidden with "Show flag names" off).
+function tag(key) {
+  return el('span', { class: 'ftag', title: `Shown because the flag ${key} is on for this shopper` }, `⚑ ${key}`);
 }
 
-function classicCheckout() {
-  return [
-    el('div', { class: 'tag' }, 'Classic checkout'),
-    el('h2', {}, 'Checkout in 3 steps'),
-    el('ol', { class: 'steps' },
-      el('li', { class: 'current' }, 'Address'),
-      el('li', {}, 'Delivery'),
-      el('li', {}, 'Payment')),
-    el('p', { class: 'muted' }, 'Step 1 of 3: enter your delivery address.'),
-    el('button', { type: 'button', class: 'secondary wide', disabled: '' }, 'Continue (demo only)'),
-  ];
+function money(gbp) {
+  const currency = on('currency-switcher') ? state.currency : 'GBP';
+  return new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(gbp * RATES[currency]);
 }
 
-function showPanel(result) {
-  const panel = document.getElementById('flag-panel');
-  const state = result.enabled ? 'ON' : 'OFF';
-  const lines = [
-    el('strong', {}, `Flag ${result.flagKey} for ${result.userId}: ${state}`),
-  ];
-  if (result.source === 'api') {
-    lines.push(el('span', {}, `Answer from the Feature Flag Manager (${result.env} environment).`));
-  } else {
-    lines.push(el('span', {}, `Fallback to the classic checkout. ${result.note}`));
-  }
-  panel.replaceChildren(...lines);
-  panel.className = result.source === 'api' ? 'panel' : 'panel panel-warn';
-  panel.hidden = false;
+function stars(rating) {
+  const full = Math.round(rating);
+  return '★'.repeat(full) + '☆'.repeat(5 - full);
 }
 
-async function goToCheckout(userId) {
-  const checkout = document.getElementById('checkout');
-  checkout.hidden = false;
-  checkout.replaceChildren(el('p', { class: 'muted' }, `Asking about ${userId}…`));
+// ---------- totals ----------
+function totals() {
+  let subtotal = 0;
+  let items = 0;
+  for (const [id, qty] of state.basket) { subtotal += byId[id].price * qty; items += qty; }
+  const bundle = on('bundle-discounts') && items >= 3 ? -(subtotal * 0.1) : 0;
+  const gift = on('gift-wrap') && state.giftWrap && items > 0 ? GIFT_WRAP : 0;
+  const delivery = on('express-shipping') && state.delivery === 'express' && items > 0 ? EXPRESS : 0;
+  return { items, subtotal, bundle, gift, delivery, total: subtotal + bundle + gift + delivery };
+}
 
+// ---------- loading the flags ----------
+async function loadFlags({ sameShopper = false } = {}) {
+  state.loading = true;
+  renderStatus();
   let result;
   try {
-    const params = new URLSearchParams({ flag: FLAG, user: userId });
-    const response = await fetch(`/api/flag?${params}`, { cache: 'no-store' });
+    const response = await fetch(`/api/flags?${new URLSearchParams({ user: state.shopper })}`, { cache: 'no-store' });
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || 'Request failed');
     result = body;
   } catch (err) {
-    // Even our own server failing must not break the shop: classic checkout.
-    result = { flagKey: FLAG, userId, enabled: false, source: 'fallback', note: err.message };
+    // Even our own server failing must not break the shop: every feature off.
+    result = { userId: state.shopper, env: null, source: 'fallback', note: err.message, ms: null, flags: [] };
   }
+  state.previous = sameShopper ? state.flags : null;
+  state.result = result;
+  state.flags = Object.fromEntries(result.flags.map((f) => [f.key, f.enabled === true]));
+  state.loading = false;
 
-  checkout.replaceChildren(...(result.enabled ? newCheckout() : classicCheckout()));
-  checkout.classList.toggle('checkout-new', result.enabled);
-  showPanel(result);
+  // A choice that depends on a feature that just went off falls back to the default.
+  if (!on('express-shipping')) state.delivery = 'standard';
+  if (state.payment !== 'card' && !on(state.payment)) state.payment = 'card';
+  if (!on('guest-checkout')) state.guest = false;
+  if (!on('currency-switcher')) state.currency = 'GBP';
+  if (!on('new-checkout') && state.step > 3) state.step = 1;
+
+  scheduleNewsletter();
+  renderAll();
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  for (const button of document.querySelectorAll('[data-user]')) {
-    button.addEventListener('click', () => {
-      document.getElementById('shopper').value = button.dataset.user;
-      goToCheckout(button.dataset.user);
-    });
+function selectShopper(id) {
+  state.shopper = id;
+  state.placedOrder = null;
+  state.returnStarted = false;
+  state.chatOpen = false;
+  state.step = 1;
+  state.wishlistLink = null;
+  state.newsletterShown = false;
+  const select = $('shopper-select');
+  select.value = SHOPPERS.some((s) => s.id === id) ? id : '';
+  loadFlags();
+}
+
+function scheduleNewsletter() {
+  clearTimeout(state.newsletterTimer);
+  if (!on('newsletter-popup') || state.newsletterDismissed.has(state.shopper) || state.newsletterShown) return;
+  // On the real site it waits 30 seconds; the demo waits 4.
+  state.newsletterTimer = setTimeout(() => { state.newsletterShown = true; renderFloating(); }, 4000);
+}
+
+// ---------- rendering ----------
+function renderAll() {
+  document.documentElement.classList.toggle('dark', on('dark-mode'));
+  renderStatus();
+  renderBanners();
+  renderHeaderTools();
+  renderFilters();
+  renderPersona();
+  renderWishlistTools();
+  renderProducts();
+  renderRecs();
+  renderAccount();
+  renderBasket();
+  renderCheckout();
+  renderInspector();
+  renderFloating();
+}
+
+function renderStatus() {
+  const status = $('status');
+  const r = state.result;
+  status.className = 'status';
+  if (state.loading) { status.textContent = `Asking the Feature Flag Manager about ${state.shopper}…`; return; }
+  if (!r) return;
+  if (r.source !== 'api') {
+    status.classList.add('status-warn');
+    status.textContent = `Fallback: every feature off. ${r.note}`;
+    return;
   }
-  document.getElementById('shopper-form').addEventListener('submit', (event) => {
-    event.preventDefault();
-    const userId = document.getElementById('shopper').value.trim();
-    if (userId) goToCheckout(userId);
+  const onCount = r.flags.filter((f) => f.enabled).length;
+  status.textContent = `${onCount} of ${r.flags.length} features on · ${r.env} · ${r.ms} ms, 1 request`;
+}
+
+function renderBanners() {
+  const banners = [];
+  if (on('black-friday-2025')) { // archived, so the Feature Flag Manager always says off
+    banners.push(el('div', { class: 'banner banner-sale' }, 'Black Friday 2025: everything 40% off', tag('black-friday-2025')));
+  }
+  if (on('promo-banner-winter')) {
+    banners.push(el('div', { class: 'banner' }, '❄ Winter sale: free delivery on orders over £50 until 31 December', tag('promo-banner-winter')));
+  }
+  fill($('banners'), ...banners);
+}
+
+function renderHeaderTools() {
+  const tools = [];
+  if (on('currency-switcher')) {
+    tools.push(el('label', { class: 'tool' },
+      el('span', { class: 'sr-only' }, 'Currency'),
+      el('select', {
+        'aria-label': 'Currency',
+        onChange: (e) => { state.currency = e.target.value; renderAll(); },
+      }, ...Object.keys(RATES).map((c) => el('option', { value: c, selected: c === state.currency }, c))),
+      tag('currency-switcher')));
+  }
+  if (on('store-locator')) {
+    tools.push(el('div', { class: 'tool popover-host' },
+      el('button', {
+        type: 'button', class: 'link-button', 'aria-expanded': String(state.storeOpen),
+        onClick: () => { state.storeOpen = !state.storeOpen; renderHeaderTools(); },
+      }, '📍 Find a store'),
+      tag('store-locator'),
+      state.storeOpen && el('div', { class: 'popover', role: 'status' },
+        el('strong', {}, 'Acme Covent Garden'), el('span', {}, '0.8 miles · open until 20:00'),
+        el('strong', {}, 'Acme Shoreditch'), el('span', {}, '2.4 miles · open until 19:00'))));
+  }
+  const { items } = totals();
+  tools.push(el('a', { class: 'tool basket-link', href: '#basket' }, `🛒 Basket (${items})`));
+  fill($('header-tools'), ...tools);
+}
+
+function renderFilters() {
+  const box = $('filters');
+  if (!on('search-filters-v2')) {
+    state.category = 'All';
+    state.inStockOnly = false;
+    state.sort = 'featured';
+    fill(box, );
+    box.className = 'wrap';
+    return;
+  }
+  box.className = 'wrap filters';
+  const cats = ['All', ...new Set(PRODUCTS.map((p) => p.cat))];
+  fill(box, 
+    el('div', { class: 'chips', role: 'group', 'aria-label': 'Category' },
+      ...cats.map((c) => el('button', {
+        type: 'button', class: c === state.category ? 'chip chip-on' : 'chip', 'aria-pressed': String(c === state.category),
+        onClick: () => { state.category = c; renderFilters(); renderProducts(); },
+      }, c))),
+    el('label', { class: 'check' }, el('input', {
+      type: 'checkbox', checked: state.inStockOnly,
+      onChange: (e) => { state.inStockOnly = e.target.checked; renderProducts(); },
+    }), 'In stock only'),
+    el('label', { class: 'check' }, 'Sort ', el('select', {
+      onChange: (e) => { state.sort = e.target.value; renderProducts(); },
+    },
+    el('option', { value: 'featured', selected: state.sort === 'featured' }, 'Featured'),
+    el('option', { value: 'low', selected: state.sort === 'low' }, 'Price: low to high'),
+    el('option', { value: 'high', selected: state.sort === 'high' }, 'Price: high to low'),
+    el('option', { value: 'rating', selected: state.sort === 'rating' }, 'Best rated'))),
+    tag('search-filters-v2'),
+  );
+}
+
+function renderPersona() {
+  const s = shopper();
+  const kids = [
+    el('div', { class: 'avatar', 'aria-hidden': 'true' }, s.name.slice(0, 1).toUpperCase()),
+    el('div', {},
+      el('p', { class: 'persona-name' }, `Shopping as ${s.name} `, el('code', {}, s.id)),
+      el('p', { class: 'muted' }, s.note)),
+  ];
+  if (on('loyalty-tiers')) {
+    kids.push(el('span', { class: 'loyalty' }, '★ Gold member · 1,240 points', tag('loyalty-tiers')));
+  }
+  fill($('persona'), ...kids);
+}
+
+function renderWishlistTools() {
+  const kids = [el('span', { class: 'muted small' }, `♥ Wishlist: ${state.wishlist.size}`)];
+  if (on('wishlist-sharing')) {
+    kids.push(el('button', {
+      type: 'button', class: 'secondary small-button', disabled: state.wishlist.size === 0,
+      onClick: () => { state.wishlistLink = `acme.example/w/${state.shopper.replace(/[^a-z0-9]/gi, '').slice(0, 8)}${state.wishlist.size}`; renderWishlistTools(); },
+    }, 'Share wishlist'), tag('wishlist-sharing'));
+    if (state.wishlistLink) kids.push(el('span', { class: 'small ok' }, `Link ready: ${state.wishlistLink}`));
+  }
+  fill($('wishlist-tools'), ...kids);
+}
+
+function visibleProducts() {
+  const q = state.search.trim().toLowerCase();
+  let list = PRODUCTS.filter((p) => p.name.toLowerCase().includes(q) || p.cat.toLowerCase().includes(q));
+  if (state.category !== 'All') list = list.filter((p) => p.cat === state.category);
+  if (state.inStockOnly) list = list.filter((p) => !p.outOfStock);
+  if (state.sort === 'low') list = [...list].sort((a, b) => a.price - b.price);
+  if (state.sort === 'high') list = [...list].sort((a, b) => b.price - a.price);
+  if (state.sort === 'rating') list = [...list].sort((a, b) => b.rating - a.rating);
+  return list;
+}
+
+function reviews(p) {
+  if (on('product-reviews-v2')) {
+    return el('div', { class: 'reviews reviews-v2' },
+      el('span', {}, el('b', {}, `★ ${p.rating}`), ` · ${p.reviews} reviews · 📷 ${p.photos} with photos`),
+      el('span', { class: 'quote' }, `“${p.quote}” · 👍 ${Math.round(p.reviews / 4)} found this helpful`),
+      tag('product-reviews-v2'));
+  }
+  return el('div', { class: 'reviews' }, el('span', { class: 'stars', 'aria-label': `${p.rating} out of 5` }, stars(p.rating)), ` (${p.reviews})`);
+}
+
+function sizeGuide(p) {
+  if (!p.sized || !on('size-guide')) return null;
+  const open = state.openSizeGuide === p.id;
+  return el('div', { class: 'size-guide' },
+    el('button', {
+      type: 'button', class: 'link-button', 'aria-expanded': String(open),
+      onClick: () => { state.openSizeGuide = open ? null : p.id; renderProducts(); },
+    }, '📏 Size guide'),
+    tag('size-guide'),
+    open && el('label', { class: 'small' }, 'Your height ',
+      el('select', {
+        onChange: (e) => { e.target.closest('.size-guide').querySelector('output').textContent = `Best size: ${e.target.value}`; },
+      },
+      el('option', { value: 'S' }, 'under 165 cm'),
+      el('option', { value: 'M', selected: true }, '165–180 cm'),
+      el('option', { value: 'L' }, '180–190 cm'),
+      el('option', { value: 'XL' }, 'over 190 cm')),
+      el('output', { class: 'ok' }, 'Best size: M')));
+}
+
+function buyArea(p) {
+  if (!p.outOfStock) {
+    return el('button', {
+      type: 'button', class: 'primary',
+      onClick: () => { state.basket.set(p.id, (state.basket.get(p.id) ?? 0) + 1); state.placedOrder = null; renderAll(); },
+    }, 'Add to basket');
+  }
+  if (on('stock-alerts')) {
+    const asked = state.stockAlerts.has(p.id);
+    return el('div', { class: 'stack' },
+      el('button', {
+        type: 'button', class: 'secondary', disabled: asked,
+        onClick: () => { state.stockAlerts.add(p.id); renderProducts(); },
+      }, asked ? '✓ We will email you' : '🔔 Email me when it is back'),
+      tag('stock-alerts'));
+  }
+  return el('button', { type: 'button', class: 'secondary', disabled: true }, 'Out of stock');
+}
+
+function productCard(p) {
+  const loved = state.wishlist.has(p.id);
+  return el('article', { class: 'product' },
+    el('div', { class: `art tone-${p.tone}`, 'aria-hidden': 'true' }, p.icon),
+    el('button', {
+      type: 'button', class: loved ? 'heart heart-on' : 'heart', 'aria-pressed': String(loved),
+      'aria-label': loved ? `Remove ${p.name} from wishlist` : `Add ${p.name} to wishlist`,
+      onClick: () => { if (loved) state.wishlist.delete(p.id); else state.wishlist.add(p.id); state.wishlistLink = null; renderWishlistTools(); renderProducts(); },
+    }, loved ? '♥' : '♡'),
+    el('div', { class: 'product-body' },
+      el('span', { class: 'muted small' }, p.cat),
+      el('h3', {}, p.name),
+      el('p', { class: 'price' }, money(p.price), p.outOfStock && el('span', { class: 'oos' }, 'Out of stock')),
+      reviews(p),
+      sizeGuide(p),
+      buyArea(p)));
+}
+
+function renderProducts() {
+  const list = visibleProducts();
+  fill($('products'), ...(list.length
+    ? list.map(productCard)
+    : [el('p', { class: 'muted empty' }, 'No products match your search.')]));
+}
+
+// A stable "personal" order for the ML recommendations: same shopper, same picks.
+function personalPicks() {
+  let h = 0;
+  for (const ch of state.shopper) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const pool = PRODUCTS.filter((p) => !state.basket.has(p.id) && !p.outOfStock);
+  return pool.map((p, i) => ({ p, score: (h >>> (i * 3)) % 97 })).sort((a, b) => b.score - a.score).slice(0, 3).map((x) => x.p);
+}
+
+function miniCard(p) {
+  return el('div', { class: 'mini' },
+    el('span', { class: `mini-art tone-${p.tone}`, 'aria-hidden': 'true' }, p.icon),
+    el('span', {}, el('b', {}, p.name), el('br'), money(p.price)),
+    el('button', {
+      type: 'button', class: 'secondary small-button',
+      onClick: () => { state.basket.set(p.id, (state.basket.get(p.id) ?? 0) + 1); renderAll(); },
+    }, 'Add'));
+}
+
+function renderRecs() {
+  const box = $('recs');
+  if (on('recommendations-ml')) {
+    box.className = 'card recs recs-ml';
+    fill(box, 
+      el('div', { class: 'section-head' }, el('h2', {}, `Recommended for ${shopper().name}`), tag('recommendations-ml')),
+      el('p', { class: 'muted small' }, 'Picked by the new recommendation model from your basket and browsing.'),
+      el('div', { class: 'minis' }, ...personalPicks().map(miniCard)));
+  } else {
+    box.className = 'card recs';
+    fill(box, 
+      el('h2', {}, 'Bestsellers'),
+      el('div', { class: 'minis' }, ...['cable', 'hoodie', 'bottle'].map((id) => miniCard(byId[id]))));
+  }
+}
+
+function renderBasket() {
+  const t = totals();
+  const rows = [...state.basket].map(([id, qty]) => {
+    const p = byId[id];
+    const change = (d) => () => { const n = qty + d; if (n <= 0) state.basket.delete(id); else state.basket.set(id, n); renderAll(); };
+    return el('li', { class: 'line' },
+      el('span', { class: 'line-name' }, `${p.icon} ${p.name}`),
+      el('span', { class: 'qty' },
+        el('button', { type: 'button', 'aria-label': `One less ${p.name}`, onClick: change(-1) }, '−'),
+        el('span', {}, String(qty)),
+        el('button', { type: 'button', 'aria-label': `One more ${p.name}`, onClick: change(1) }, '+')),
+      el('span', { class: 'line-price' }, money(p.price * qty)));
   });
+
+  const extras = [];
+  if (on('gift-wrap') && t.items > 0) {
+    extras.push(el('div', { class: 'option' },
+      el('label', { class: 'check' }, el('input', {
+        type: 'checkbox', checked: state.giftWrap,
+        onChange: (e) => { state.giftWrap = e.target.checked; renderAll(); },
+      }), `🎁 Gift wrap with a message (+${money(GIFT_WRAP)})`, tag('gift-wrap')),
+      state.giftWrap && el('input', {
+        class: 'full', maxlength: '120', placeholder: 'Your message', value: state.giftMessage, 'aria-label': 'Gift message',
+        onInput: (e) => { state.giftMessage = e.target.value; },
+      })));
+  }
+  if (on('bundle-discounts') && t.items > 0 && t.items < 3) {
+    extras.push(el('p', { class: 'hint' }, `Add ${3 - t.items} more item${3 - t.items === 1 ? '' : 's'} to save 10% with a bundle.`, tag('bundle-discounts')));
+  }
+
+  const sums = [el('li', {}, el('span', {}, 'Subtotal'), el('span', {}, money(t.subtotal)))];
+  if (t.bundle) sums.push(el('li', { class: 'ok' }, el('span', {}, 'Bundle discount (10%)', tag('bundle-discounts')), el('span', {}, `−${money(-t.bundle)}`)));
+  if (t.gift) sums.push(el('li', {}, el('span', {}, 'Gift wrap'), el('span', {}, money(t.gift))));
+  if (t.delivery) sums.push(el('li', {}, el('span', {}, 'Express delivery'), el('span', {}, money(t.delivery))));
+  sums.push(el('li', { class: 'total' }, el('span', {}, 'Total'), el('span', {}, money(t.total))));
+
+  fill($('basket'), 
+    el('h2', { id: 'basket-heading' }, 'Your basket'),
+    state.placedOrder
+      ? el('p', { class: 'ok' }, `✓ Order ${state.placedOrder} placed (demo only, no payment taken).`)
+      : null,
+    rows.length ? el('ul', { class: 'lines' }, ...rows) : el('p', { class: 'muted' }, 'Your basket is empty.'),
+    ...extras,
+    rows.length ? el('ul', { class: 'sums' }, ...sums) : null,
+    rows.length ? el('button', {
+      type: 'button', class: 'primary wide',
+      onClick: () => { state.checkoutOpen = true; state.step = 1; renderCheckout(); $('checkout').scrollIntoView({ behavior: 'smooth', block: 'start' }); },
+    }, 'Go to checkout') : null);
+}
+
+// ----- checkout parts (shared by the new one-page and the classic 3-step checkout) -----
+function whoPart() {
+  const s = shopper();
+  if (!on('guest-checkout')) {
+    return el('div', { class: 'part' }, el('h3', {}, 'Account'), el('p', { class: 'muted' }, `Signed in as ${s.name}. An account is needed to check out.`));
+  }
+  return el('div', { class: 'part' },
+    el('h3', {}, 'Account ', tag('guest-checkout')),
+    el('div', { class: 'radios' },
+      el('label', {}, el('input', { type: 'radio', name: 'who', checked: !state.guest, onChange: () => { state.guest = false; renderCheckout(); } }), ` Signed in as ${s.name}`),
+      el('label', {}, el('input', { type: 'radio', name: 'who', checked: state.guest, onChange: () => { state.guest = true; renderCheckout(); } }), ' Check out as a guest')),
+    state.guest && el('input', { class: 'full', type: 'email', placeholder: 'Email for your receipt', 'aria-label': 'Email for your receipt' }));
+}
+
+function addressPart() {
+  if (on('address-autocomplete')) {
+    return el('div', { class: 'part' },
+      el('h3', {}, 'Delivery address ', tag('address-autocomplete')),
+      el('form', {
+        class: 'row',
+        onSubmit: (e) => {
+          e.preventDefault();
+          const pc = state.postcode.trim().toUpperCase() || 'WC2E 9DD';
+          state.addressOptions = [`12 Example Road, London ${pc}`, `14 Example Road, London ${pc}`, `Flat 3, 16 Example Road, London ${pc}`];
+          state.address = state.addressOptions[0];
+          renderCheckout();
+        },
+      },
+      el('input', { placeholder: 'Postcode', 'aria-label': 'Postcode', maxlength: '8', value: state.postcode, onInput: (e) => { state.postcode = e.target.value; } }),
+      el('button', { type: 'submit', class: 'secondary' }, 'Find address')),
+      state.addressOptions && el('select', {
+        class: 'full', 'aria-label': 'Choose your address',
+        onChange: (e) => { state.address = e.target.value; },
+      }, ...state.addressOptions.map((a) => el('option', { value: a, selected: a === state.address }, a))));
+  }
+  return el('div', { class: 'part' },
+    el('h3', {}, 'Delivery address'),
+    el('input', { class: 'full', placeholder: 'Address line 1', 'aria-label': 'Address line 1' }),
+    el('div', { class: 'row' },
+      el('input', { placeholder: 'Town or city', 'aria-label': 'Town or city' }),
+      el('input', { placeholder: 'Postcode', 'aria-label': 'Postcode', maxlength: '8' })));
+}
+
+function deliveryPart() {
+  const opt = (value, label, extra) => el('label', {},
+    el('input', { type: 'radio', name: 'delivery', checked: state.delivery === value, onChange: () => { state.delivery = value; renderBasket(); renderCheckout(); } }),
+    ` ${label}`, extra);
+  return el('div', { class: 'part' },
+    el('h3', {}, 'Delivery'),
+    el('div', { class: 'radios' },
+      opt('standard', 'Standard, 3–5 days · free'),
+      on('express-shipping') && opt('express', `Express, next day · ${money(EXPRESS)}`, tag('express-shipping'))));
+}
+
+function paymentPart() {
+  const methods = [['card', on('new-checkout') ? 'Saved card ending 4242' : 'Credit or debit card']];
+  if (on('apple-pay')) methods.push(['apple-pay', ' Apple Pay']);
+  if (on('google-pay')) methods.push(['google-pay', 'Google Pay']);
+  if (on('paypal-v1')) methods.push(['paypal-v1', 'PayPal']); // archived: never offered
+  return el('div', { class: 'part' },
+    el('h3', {}, 'Payment'),
+    el('div', { class: 'pay-methods' }, ...methods.map(([key, label]) => el('label', { class: state.payment === key ? 'pay pay-on' : 'pay' },
+      el('input', { type: 'radio', name: 'payment', checked: state.payment === key, onChange: () => { state.payment = key; renderCheckout(); } }),
+      ` ${label}`, key !== 'card' && tag(key)))),
+    !on('new-checkout') && state.payment === 'card' && el('div', { class: 'row' },
+      el('input', { placeholder: 'Card number', 'aria-label': 'Card number (demo, do not enter a real card)', inputmode: 'numeric', maxlength: '19' }),
+      el('input', { placeholder: 'MM/YY', 'aria-label': 'Expiry date', maxlength: '5' })));
+}
+
+function placeOrder() {
+  state.placedOrder = `AC-${10000 + Math.floor(Math.random() * 90000)}`;
+  state.basket.clear();
+  state.checkoutOpen = false;
+  state.giftWrap = false;
+  renderAll();
+  $('basket').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderCheckout() {
+  const box = $('checkout');
+  if (!state.checkoutOpen || state.basket.size === 0) { box.hidden = true; return; }
+  box.hidden = false;
+  const t = totals();
+  const close = el('button', { type: 'button', class: 'link-button close', onClick: () => { state.checkoutOpen = false; renderCheckout(); } }, 'Close');
+
+  if (on('new-checkout')) {
+    box.className = 'card checkout checkout-new';
+    fill(box, 
+      el('div', { class: 'section-head' }, el('span', { class: 'pill pill-new' }, 'New checkout'), tag('new-checkout'), close),
+      el('h2', {}, 'One-page checkout'),
+      el('p', { class: 'muted small' }, 'Everything on one screen.'),
+      whoPart(), addressPart(), deliveryPart(), paymentPart(),
+      el('button', { type: 'button', class: 'primary wide', onClick: placeOrder }, `Pay ${money(t.total)} (demo only)`));
+    return;
+  }
+
+  box.className = 'card checkout';
+  const steps = ['Address', 'Delivery', 'Payment'];
+  const body = state.step === 1 ? [whoPart(), addressPart()] : state.step === 2 ? [deliveryPart()] : [paymentPart()];
+  fill(box, 
+    el('div', { class: 'section-head' }, el('span', { class: 'pill' }, 'Classic checkout'), close),
+    el('h2', {}, 'Checkout in 3 steps'),
+    el('ol', { class: 'steps' }, ...steps.map((s, i) => el('li', { class: i + 1 === state.step ? 'current' : i + 1 < state.step ? 'done' : '' }, s))),
+    ...body,
+    el('div', { class: 'row' },
+      state.step > 1 && el('button', { type: 'button', class: 'secondary', onClick: () => { state.step -= 1; renderCheckout(); } }, 'Back'),
+      state.step < 3
+        ? el('button', { type: 'button', class: 'primary', onClick: () => { state.step += 1; renderCheckout(); } }, 'Continue')
+        : el('button', { type: 'button', class: 'primary', onClick: placeOrder }, `Pay ${money(t.total)} (demo only)`)));
+}
+
+function renderAccount() {
+  const lastOrder = ['hoodie', 'bottle'];
+  const tracking = on('order-tracking-map')
+    ? el('div', { class: 'map', role: 'img', 'aria-label': 'Map: the courier is 2 stops away' },
+      el('span', { class: 'map-road' }), el('span', { class: 'map-van' }, '🚚'), el('span', { class: 'map-home' }, '🏠'),
+      el('span', { class: 'map-note' }, 'Courier is 2 stops away', tag('order-tracking-map')))
+    : el('p', { class: 'muted' }, '🚚 Out for delivery, arriving today between 14:00 and 16:00.');
+
+  const reorder = on('one-click-reorder')
+    ? el('span', {}, el('button', {
+      type: 'button', class: 'secondary small-button',
+      onClick: () => { for (const id of lastOrder) state.basket.set(id, (state.basket.get(id) ?? 0) + 1); state.placedOrder = null; renderAll(); },
+    }, '↻ Reorder in one click'), tag('one-click-reorder'))
+    : el('button', { type: 'button', class: 'secondary small-button', disabled: true }, 'View order');
+
+  let returns;
+  if (on('returns-portal')) {
+    returns = state.returnStarted
+      ? el('p', { class: 'ok' }, '✓ Return label created (demo). Drop the parcel at any Acme store.', tag('returns-portal'))
+      : el('span', {}, el('button', { type: 'button', class: 'secondary small-button', onClick: () => { state.returnStarted = true; renderAccount(); } }, 'Start a return'), tag('returns-portal'));
+  } else {
+    returns = el('p', { class: 'muted small' }, 'To return an item, email support@acme.example.');
+  }
+
+  const emails = [
+    on('cart-reminders')
+      ? el('li', {}, '✓ We remind you about items left in your basket for 24 hours.', tag('cart-reminders'))
+      : el('li', { class: 'muted' }, 'Basket reminders are not available yet.'),
+    on('dark-mode-emails')
+      ? el('li', {}, '✓ Our emails follow your dark mode setting.', tag('dark-mode-emails'))
+      : el('li', { class: 'muted' }, 'Emails always use the light design.'),
+  ];
+
+  fill($('account'), 
+    el('h2', { id: 'account-heading' }, 'Your account'),
+    el('div', { class: 'account-grid' },
+      el('div', { class: 'order' },
+        el('div', { class: 'section-head' }, el('h3', {}, 'Order AC-10492'), el('span', { class: 'muted small' }, `${byId.hoodie.name}, ${byId.bottle.name}`)),
+        tracking,
+        el('div', { class: 'row' }, reorder, returns)),
+      el('div', {},
+        el('h3', {}, 'Email preferences'),
+        el('ul', { class: 'plain' }, ...emails))));
+}
+
+function renderInspector() {
+  const box = $('inspector');
+  const r = state.result;
+  if (!r) return;
+  const groups = {};
+  for (const f of r.flags) (groups[f.area] ??= []).push(f);
+  const source = r.source === 'api'
+    ? el('p', { class: 'small' }, `Answered by the Feature Flag Manager (${r.env}) in ${r.ms} ms: ${r.flags.length} flags in one request to `, el('code', {}, 'POST /api/v1/evaluations/batch'), '.')
+    : el('p', { class: 'small warn' }, `The Feature Flag Manager was not asked or did not answer: ${r.note} Every feature is off (fail closed).`);
+
+  fill(box, 
+    el('div', { class: 'section-head' },
+      el('h2', { id: 'inspector-heading' }, `Flags for ${r.userId}`),
+      el('button', { type: 'button', class: 'link-button', onClick: () => toggleInspector(false) }, 'Close')),
+    source,
+    el('p', { class: 'small muted' }, 'Change a rollout in the Feature Flag Manager, then press “Refresh flags”: rows that changed are marked.'),
+    ...Object.entries(groups).map(([area, flags]) => el('div', { class: 'flag-group' },
+      el('h3', {}, area),
+      el('ul', { class: 'flag-list' }, ...flags.map((f) => {
+        const changed = state.previous && f.key in state.previous && state.previous[f.key] !== f.enabled;
+        return el('li', { class: changed ? 'changed' : '' },
+          el('span', {}, el('span', { class: 'flag-label' }, f.label), el('code', {}, f.key)),
+          el('span', { class: 'flag-state' },
+            changed && el('span', { class: 'pill pill-changed' }, 'changed'),
+            !f.found && r.source === 'api' && el('span', { class: 'pill pill-missing' }, 'not in FFM'),
+            el('span', { class: f.enabled ? 'pill pill-on' : 'pill pill-off' }, f.enabled ? 'ON' : 'OFF')));
+      })))));
+}
+
+function toggleInspector(open) {
+  const box = $('inspector');
+  box.hidden = !open;
+  $('inspector-toggle').setAttribute('aria-expanded', String(open));
+  document.body.classList.toggle('inspector-open', open);
+}
+
+function renderFloating() {
+  const kids = [];
+  if (on('live-chat')) {
+    kids.push(el('div', { class: 'chat' },
+      state.chatOpen && el('div', { class: 'chat-panel', role: 'dialog', 'aria-label': 'Live chat' },
+        el('p', {}, el('b', {}, 'Acme support')),
+        el('p', { class: 'bubble' }, `Hi ${shopper().name}! An agent usually replies within 2 minutes.`),
+        el('input', { class: 'full', placeholder: 'Type a message (demo)', 'aria-label': 'Chat message', disabled: true })),
+      el('button', {
+        type: 'button', class: 'chat-button', 'aria-expanded': String(state.chatOpen),
+        onClick: () => { state.chatOpen = !state.chatOpen; renderFloating(); },
+      }, state.chatOpen ? '✕ Close chat' : '💬 Chat with us', tag('live-chat'))));
+  }
+  if (on('newsletter-popup') && state.newsletterShown && !state.newsletterDismissed.has(state.shopper)) {
+    kids.push(el('div', { class: 'newsletter', role: 'dialog', 'aria-label': 'Newsletter' },
+      el('div', { class: 'section-head' }, el('b', {}, 'Get 10% off your first order'),
+        el('button', { type: 'button', class: 'link-button', 'aria-label': 'Close newsletter', onClick: () => { state.newsletterDismissed.add(state.shopper); renderFloating(); } }, '✕')),
+      el('p', { class: 'small muted' }, 'Join the Acme newsletter.'),
+      el('div', { class: 'row' }, el('input', { type: 'email', placeholder: 'Email', 'aria-label': 'Email' }),
+        el('button', { type: 'button', class: 'primary', onClick: () => { state.newsletterDismissed.add(state.shopper); renderFloating(); } }, 'Sign up')),
+      tag('newsletter-popup')));
+  }
+  fill($('floating'), ...kids);
+}
+
+// ---------- start ----------
+document.addEventListener('DOMContentLoaded', () => {
+  const select = $('shopper-select');
+  select.replaceChildren(
+    ...SHOPPERS.map((s) => el('option', { value: s.id }, `${s.name} (${s.id})`)),
+    el('option', { value: '', disabled: true }, 'Custom id'));
+  select.value = state.shopper;
+  select.addEventListener('change', () => { if (select.value) selectShopper(select.value); });
+
+  $('custom-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const id = $('custom-id').value.trim();
+    if (id) selectShopper(id);
+  });
+  $('refresh').addEventListener('click', () => loadFlags({ sameShopper: true }));
+  $('show-tags').addEventListener('change', (e) => document.body.classList.toggle('show-tags', e.target.checked));
+  $('inspector-toggle').addEventListener('click', () => toggleInspector($('inspector').hidden));
+  $('search').addEventListener('input', (e) => { state.search = e.target.value; renderProducts(); });
+  $('search-form').addEventListener('submit', (e) => e.preventDefault());
+
+  renderAll();
+  loadFlags();
 });

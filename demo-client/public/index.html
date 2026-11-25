@@ -7,51 +7,68 @@
   <link rel="stylesheet" href="/styles.css">
   <script src="/app.js" defer></script>
 </head>
-<body>
+<body class="show-tags">
+  <!-- Demo controls: not part of the shop. They pick the shopper and show what the flags said. -->
+  <div class="demo-bar" role="region" aria-label="Demo controls">
+    <div class="wrap demo-row">
+      <span class="demo-label">Demo</span>
+      <label class="demo-field">
+        <span>Shopper</span>
+        <select id="shopper-select"></select>
+      </label>
+      <form id="custom-form" class="demo-field">
+        <label for="custom-id" class="sr-only">Any shopper id</label>
+        <input id="custom-id" maxlength="100" placeholder="or any id, e.g. u-5555" autocomplete="off">
+        <button type="submit">Use</button>
+      </form>
+      <button type="button" id="refresh">Refresh flags</button>
+      <label class="demo-check"><input type="checkbox" id="show-tags" checked> Show flag names</label>
+      <button type="button" id="inspector-toggle" aria-expanded="false" aria-controls="inspector">Flag inspector</button>
+      <span id="status" class="status" aria-live="polite">Loading flags…</span>
+    </div>
+  </div>
+
+  <div id="banners"></div>
+
   <header class="top">
     <div class="wrap top-row">
-      <span class="logo">Acme Store</span>
-      <span class="badge">Demo client for the Feature Flag Manager</span>
+      <a class="logo" href="/">Acme<span>Store</span></a>
+      <form id="search-form" class="search" role="search">
+        <label for="search" class="sr-only">Search products</label>
+        <input id="search" type="search" placeholder="Search products" autocomplete="off">
+      </form>
+      <div id="header-tools" class="header-tools"></div>
     </div>
+    <div id="filters" class="wrap"></div>
   </header>
 
-  <main class="wrap">
-    <section class="card" aria-labelledby="who">
-      <h1 id="who">Who is shopping?</h1>
-      <p class="muted">Pick a shopper. The store asks the Feature Flag Manager whether the
-        <code>new-checkout</code> flag is on for them, then shows the matching checkout.</p>
-      <div class="shoppers" role="group" aria-label="Example shoppers">
-        <button type="button" data-user="u-981">u-981</button>
-        <button type="button" data-user="u-123">u-123</button>
-        <button type="button" data-user="u-2048">u-2048</button>
-        <button type="button" data-user="u-7">u-7</button>
-      </div>
-      <form id="shopper-form" class="shopper-form">
-        <label for="shopper">Or type any shopper id</label>
-        <div class="row">
-          <input id="shopper" name="shopper" maxlength="100" placeholder="e.g. u-5555" autocomplete="off" required>
-          <button type="submit" class="primary">Go to checkout</button>
+  <main class="wrap layout">
+    <div class="shop">
+      <section id="persona" class="persona" aria-live="polite"></section>
+      <section aria-labelledby="products-heading">
+        <div class="section-head">
+          <h2 id="products-heading">Products</h2>
+          <div id="wishlist-tools"></div>
         </div>
-      </form>
-    </section>
+        <div id="products" class="grid"></div>
+      </section>
+      <section id="recs" aria-live="polite"></section>
+      <section id="account" class="card" aria-labelledby="account-heading"></section>
+    </div>
 
-    <section class="card" aria-labelledby="cart-heading">
-      <h2 id="cart-heading">Your basket</h2>
-      <ul class="cart">
-        <li><span>Wireless headphones</span><span>£79.00</span></li>
-        <li><span>Charging cable</span><span>£12.00</span></li>
-        <li class="total"><span>Total</span><span>£91.00</span></li>
-      </ul>
-    </section>
-
-    <section id="checkout" class="card" aria-live="polite" hidden></section>
-
-    <section id="flag-panel" class="panel" aria-live="polite" hidden></section>
+    <aside class="side">
+      <section id="basket" class="card" aria-labelledby="basket-heading"></section>
+      <section id="checkout" class="card" aria-live="polite" hidden></section>
+    </aside>
   </main>
 
-  <footer class="wrap muted small">
-    The API key never reaches this page: the store's own server function asks the flag service.
-    If the flag service fails, the store falls back to the classic checkout.
+  <aside id="inspector" class="inspector" aria-labelledby="inspector-heading" hidden></aside>
+  <div id="floating"></div>
+
+  <footer class="wrap footer">
+    Acme Store is a demo client for the Feature Flag Manager. Its API key stays on the store's
+    server: this page only sees which features are on. If the flag service fails, every feature
+    is off and the shop works as it did before.
   </footer>
 </body>
 </html>
