@@ -11,7 +11,8 @@
     "seed:key": "node --env-file=.env backend/db/seed-key.js",
     "seed:demo": "node --env-file=.env backend/db/seed-demo.js",
     "test": "jest --runInBand",
-    "build:lambda": "node infra/floci/build-lambda.js"
+    "build:lambda": "node infra/floci/build-lambda.js",
+    "check:envs": "node --env-file=.env.envcheck tests/env-check/check-envs.js"
   },
   "repository": {
     "type": "git",
