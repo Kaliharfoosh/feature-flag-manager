@@ -20,13 +20,13 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 cd "$REPO"
 
-# function | service | secret | role | database login (.env name)
-# ffm-eval-fn uses its own login ffm_eval_app when it exists (npm run db:service-role -- eval);
-# the other two share ffm_app, the limited login Vercel uses.
+# function | service | secret | role
+# All three log in to Neon as ffm_app, the limited login Vercel uses (DATABASE_URL_APP in .env):
+# no DDL, audit history append-only, no access to the migration table.
 SERVICES=(
-  "ffm-flags-fn|flags|ffm/flags-db|ffm-flags-role|DATABASE_URL_APP"
-  "ffm-eval-fn|eval|ffm/eval-db|ffm-eval-role|DATABASE_URL_EVAL"
-  "ffm-audit-fn|audit|ffm/audit-db|ffm-audit-role|DATABASE_URL_APP"
+  "ffm-flags-fn|flags|ffm/flags-db|ffm-flags-role"
+  "ffm-eval-fn|eval|ffm/eval-db|ffm-eval-role"
+  "ffm-audit-fn|audit|ffm/audit-db|ffm-audit-role"
 )
 
 # Which paths go where. API Gateway always picks the MOST specific match.
@@ -67,12 +67,6 @@ awsl sts get-caller-identity >/dev/null 2>&1 \
   || { echo "Floci is not answering on ${ENDPOINT}. Start it:  docker compose -f infra/floci/docker-compose.yml up -d"; exit 1; }
 node --env-file=.env -e "process.exit(process.env.DATABASE_URL_APP ? 0 : 1)" \
   || { echo "DATABASE_URL_APP (the ffm_app login) is missing in .env."; exit 1; }
-if node --env-file=.env -e "process.exit(process.env.DATABASE_URL_EVAL ? 0 : 1)"; then
-  echo "  ffm-eval-fn will log in as its own role ffm_eval_app"
-else
-  echo "  NOTE: ffm_eval_app not created yet, so ffm-eval-fn uses ffm_app for now."
-  echo "        Create it with  npm run db:service-role -- eval  and run this script again."
-fi
 # The session secret must be the SAME in every function, or a login made through ffm-flags-fn
 # is not valid in the others. Reuse the one Lab 7's ffm/api-secrets has; else SESSION_SECRET.
 awsl secretsmanager get-secret-value --secret-id ffm/api-secrets --query SecretString --output text \
@@ -89,7 +83,7 @@ echo "[1/6] done"
 
 # Builds ONE function with its own secret, log group and role.
 deploy_function() {
-  local fn="$1" service="$2" secret="$3" role="$4" db_var="$5"
+  local fn="$1" service="$2" secret="$3" role="$4"
   local log_group="/aws/lambda/${fn}"
   echo "--- ${fn} (services: ${service}) ---"
 
@@ -99,12 +93,12 @@ deploy_function() {
     let shared = {};
     try { shared = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); } catch {}
     const value = {
-      DATABASE_URL: process.env[process.argv[2]] || process.env.DATABASE_URL_APP,
+      DATABASE_URL: process.env.DATABASE_URL_APP,
       SESSION_SECRET: shared.SESSION_SECRET || process.env.SESSION_SECRET,
     };
     if (!value.SESSION_SECRET) { console.error('No SESSION_SECRET found'); process.exit(1); }
-    fs.writeFileSync(process.argv[3], JSON.stringify(value));
-  " "$TMP/shared.json" "$db_var" "$TMP/secret.json"
+    fs.writeFileSync(process.argv[2], JSON.stringify(value));
+  " "$TMP/shared.json" "$TMP/secret.json"
   if awsl secretsmanager describe-secret --secret-id "$secret" >/dev/null 2>&1; then
     awsl secretsmanager put-secret-value --secret-id "$secret" --secret-string "file://$TMP/secret.json" >/dev/null
   else
@@ -163,8 +157,8 @@ JSON
 
 echo "=== [2/6] Three functions, each with its own secret, role and logs ==="
 for entry in "${SERVICES[@]}"; do
-  IFS='|' read -r fn service secret role db_var <<< "$entry"
-  deploy_function "$fn" "$service" "$secret" "$role" "$db_var"
+  IFS='|' read -r fn service secret role <<< "$entry"
+  deploy_function "$fn" "$service" "$secret" "$role"
 done
 echo "[2/6] done"
 

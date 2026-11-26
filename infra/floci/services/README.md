@@ -27,11 +27,14 @@ Gateway picks the most specific route:
 Every response carries `X-Served-By` (`flags`, `eval` or `audit`). All three use the same session
 secret, so one login works everywhere.
 
-| Function | Handler | Secret (its IAM role may read only this) | Database login |
-|---|---|---|---|
-| `ffm-flags-fn` | `backend/lambdas/flags.handler` | `ffm/flags-db` | `ffm_app` (shared, limited) |
-| `ffm-eval-fn` | `backend/lambdas/eval.handler` | `ffm/eval-db` | `ffm_eval_app` (its own) once created, else `ffm_app` |
-| `ffm-audit-fn` | `backend/lambdas/audit.handler` | `ffm/audit-db` | `ffm_app` (shared, limited) |
+| Function | Handler | Secret (its IAM role may read only this) |
+|---|---|---|
+| `ffm-flags-fn` | `backend/lambdas/flags.handler` | `ffm/flags-db` |
+| `ffm-eval-fn` | `backend/lambdas/eval.handler` | `ffm/eval-db` |
+| `ffm-audit-fn` | `backend/lambdas/audit.handler` | `ffm/audit-db` |
+
+All three log in to Neon as `ffm_app`, the limited login Vercel also uses (no DDL, audit history
+append-only, no access to the migration table).
 
 ## Run it
 
@@ -39,7 +42,6 @@ Docker Desktop running, then from the repo root:
 
 ```bash
 docker compose -f infra/floci/docker-compose.yml up -d   # Floci
-npm run db:service-role -- eval                          # once: database role ffm_eval_app in Neon
 bash infra/floci/services/s2-lambdas.sh                  # Git Bash: build + deploy everything
 ```
 
@@ -47,19 +49,15 @@ bash infra/floci/services/s2-lambdas.sh                  # Git Bash: build + dep
 run it again after any code change. Roles, log groups, secrets and routes are updated, never
 duplicated. `SKIP_BUILD=1 bash infra/floci/services/s2-lambdas.sh` reuses the last zip.
 
-It ends with a self-test: each function's health on its own (proves Lambda → Secrets Manager →
-Neon), then eight requests through API Gateway, checking the status AND which function answered.
-
-## What `ffm_eval_app` may do (tested on a throwaway Postgres)
-
-| Allowed | Refused by Postgres |
-|---|---|
-| read/write `rollouts`, `user_rules`, `api_key_usage`; read `flags`, `api_keys`, `users`; add `audit_events` | `login_attempts`, `teams`, `schema_migrations`; UPDATE/DELETE on `audit_events`; DELETE on `flags`; UPDATE on `users` |
+It needs `DATABASE_URL_APP` (the `ffm_app` login) in `.env` and stops with a clear message if that
+is missing. It ends with a self-test: each function's health on its own (proves Lambda → Secrets
+Manager → Neon), then eight requests through API Gateway, checking the status AND which function
+answered. After every check passes it removes the old Lab 7 function `ffm-api` and its role.
 
 ## Honest limits (for the report)
 
 - Floci records IAM policies, the secrets' resource policies and the route throttle; its docs do
-  not say they are enforced. The database refusals above are real: Neon is a real Postgres.
-- `ffm-flags-fn` and `ffm-audit-fn` share the `ffm_app` login. Improvement: one login per
-  service, as done for `ffm-eval-fn`.
+  not say they are enforced. `ffm_app`'s database limits are real: Neon is a real Postgres.
+- All three functions share the `ffm_app` login. Improvement: one database login per service, so
+  a bug in one service cannot reach another service's tables.
 - The functions talk to the live Neon database, so test with a test flag and a test API key.

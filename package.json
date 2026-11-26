@@ -11,8 +11,7 @@
     "seed:key": "node --env-file=.env backend/db/seed-key.js",
     "seed:demo": "node --env-file=.env backend/db/seed-demo.js",
     "test": "jest --runInBand",
-    "build:lambda": "node infra/floci/build-lambda.js",
-    "db:service-role": "node --env-file=.env backend/db/create-service-role.js"
+    "build:lambda": "node infra/floci/build-lambda.js"
   },
   "repository": {
     "type": "git",

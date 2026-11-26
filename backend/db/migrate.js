@@ -1,5 +1,4 @@
-// Applies every .sql file in ./migrations once, in name order, then re-applies grants.sql and
-// grants-services.sql (one role per AWS Lambda).
+// Applies every .sql file in ./migrations once, in name order, then re-applies grants.sql.
 // Usage: npm run migrate   (uses DATABASE_URL_MIGRATE, falling back to DATABASE_URL)
 const fs = require('node:fs');
 const path = require('node:path');
@@ -35,8 +34,6 @@ async function migrate(connectionString, { quiet = false } = {}) {
     }
     await client.query(fs.readFileSync(path.join(__dirname, 'grants.sql'), 'utf8'));
     say('grants applied (if the ffm_app role exists)');
-    await client.query(fs.readFileSync(path.join(__dirname, 'grants-services.sql'), 'utf8'));
-    say('per-service grants applied (for the roles that exist)');
   } finally {
     await client.end();
   }
