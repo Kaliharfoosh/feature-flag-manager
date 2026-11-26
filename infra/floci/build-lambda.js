@@ -1,6 +1,11 @@
 // Builds build/lambda.zip: the code Lambda runs.  Usage:  npm run build:lambda
 // Contains ONLY what the API needs: backend/ (no tests), package.json and the production
 // packages. .env (secrets), frontend/, tests and dev tools are never included.
+// The SAME zip is used by every Lambda: only the handler setting differs
+//   ffm-flags-fn -> backend/lambdas/flags.handler   ffm-eval-fn -> backend/lambdas/eval.handler
+//   ffm-audit-fn -> backend/lambdas/audit.handler   (old single ffm-api -> backend/lambda.handler)
+// Each handler mounts only its own routes (backend/build-app.js); its IAM role and secret decide
+// what else it can reach. The services share helper code, so the files themselves stay together.
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');

@@ -454,8 +454,9 @@ An audit event as returned by the API:
 ### GET /health
 
 - Who: Public
-- `200 OK`: `{ "status": "ok", "db": "ok", "commit": "3854977…" }`
-- `503`: `{ "status": "degraded", "db": "down", "commit": "…" }`. Never `500`.
+- `200 OK`: `{ "status": "ok", "db": "ok", "commit": "3854977…", "services": ["flags", "eval", "audit"] }`
+- `503`: `{ "status": "degraded", "db": "down", "commit": "…", "services": [...] }`. Never `500`.
+- `services` says which copy answered: all three on Vercel, one on each AWS Lambda (`buildApp`).
 
 ---
 
@@ -501,4 +502,4 @@ screenshot of an error can be matched to its log entry.
 | 404 NOT_FOUND, 409 | the owning service's `controller.js` after the service returns nothing / zero rows |
 | 415 | `backend/middleware/require-json.js` |
 | 429 | `backend/services/auth/controller.js` (login), `backend/services/keys-evaluation/controller.js` (evaluations) |
-| 503 | `backend/app.js` (health), `keys-evaluation/controller.js` (evaluations) |
+| 503 | `backend/build-app.js` (health), `keys-evaluation/controller.js` (evaluations) |
