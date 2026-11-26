@@ -30,6 +30,11 @@ function buildApp({ services = ALL_SERVICES } = {}) {
   const app = express();
   app.use(helmet());
 
+  // Says which copy answered (flags / eval / audit), so the demo and the logs can show which
+  // Lambda API Gateway picked. It names services only: nothing about versions or the server.
+  const servedBy = services.join(',');
+  app.use((req, res, next) => { res.set('X-Served-By', servedBy); next(); });
+
   // Lab 8 scale test only: each local copy of the API gets a name (ffm-task-1, -2, -3) and says
   // which copy answered, so round robin and failover can be seen. Not set on Vercel.
   const instanceId = process.env.INSTANCE_ID;
