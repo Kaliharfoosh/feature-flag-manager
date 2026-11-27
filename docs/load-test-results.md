@@ -131,6 +131,41 @@ task-3. On real AWS, ECS would now start a replacement task to get back to 3.
   Node.js process, and Node runs our code on one core. A bigger task cannot make one core faster.
 - **Failover costs almost nothing:** 1 failed request in 1,534 (0.06%), far under the 5% limit.
 
+## Run C through API Gateway and Lambda (Floci, 27 Nov)
+
+The same rate-limit test, but through the real AWS path on Floci: k6 → API Gateway `ffm-http-api`
+→ Lambda `ffm-eval-fn` (S2's function, built by `infra/floci/services/s2-lambdas.sh`). Raw output:
+`evidence/test-results/k6-floci-gateway-ratelimit.txt`.
+
+| | |
+|---|---|
+| Date | 27 Nov 2026, main `f2c606c`, Floci 2.5.0 |
+| Database | `ffm-eval-fn`'s secret `ffm/eval-db` was pointed for the run at the throwaway Postgres (`tests/load/start-local-db.ps1`, reached from the Lambda container as `host.docker.internal:55432`), with a fresh local staging key. Neon was never load-tested. Afterwards `s2-lambdas.sh` was run again, which rewrote the secret from `.env`; the test key then got 401, proving the function was back on Neon |
+| Start | At second 1–4 of a clock minute, so all 150 requests fell into one minute window |
+
+| Check | Expected | Actual | Result |
+|---|---|---|---|
+| Answered 200 | At most 120 | **120** | ✓ |
+| Answered 429 `RATE_LIMITED` | The rest | **30** | ✓ |
+| `Retry-After` on every 429 | 1–60 s | Present on all 30 (60 of 60 checks passed) | ✓ |
+| Anything other than 200 or 429 | 0 | 0 of 150 | ✓ |
+| Security event | One `rate_limit.hit` | **One** row in `audit_events` | ✓ |
+| Counter row in `api_key_usage` | Stops at the first refusal | `count = 121` (120 allowed + 1 first refusal; the other 29 refusals write nothing) | ✓ |
+
+**What the numbers mean**
+- **The limit is exact through API Gateway and Lambda too.** Floci started several copies of
+  `ffm-eval-fn` for the 10 parallel users, and the count stayed exactly 120 because it lives in
+  Postgres, not in one copy's memory: the same result as on one server (Run C) and across three
+  containers (Lab 8).
+- **Cold starts show in the tail, not the middle:** median 16.8 ms and p(90) 125 ms, but p(95)
+  5.75 s and max 8.2 s. Those slow requests are the first request of each new Lambda copy (start
+  the container, read the secret, open the database pool). On AWS, provisioned concurrency or a
+  warm-up call would remove most of them; here they cost nothing because only the first request
+  of each copy pays.
+- **The API Gateway throttle (50 requests/s, burst 100) was not reached:** k6 sent about 18
+  requests/s, so every 429 came from the per-key limiter (code `RATE_LIMITED`, with `Retry-After`).
+  Whether Floci enforces the gateway throttle is still not shown (see Limitations).
+
 ## Limitations of this test
 
 - Everything ran on one PC, so k6, the API and the database competed for the same CPU. The real
