@@ -28,6 +28,9 @@
   "homepage": "https://github.com/Kaliharfoosh/feature-flag-manager#readme",
   "dependencies": {
     "@aws-sdk/client-cloudwatch": "^3.1169.0",
+    "@aws-sdk/client-eventbridge": "^3.1178.0",
+    "@aws-sdk/client-kms": "^3.1178.0",
+    "@aws-sdk/client-s3": "^3.1178.0",
     "@aws-sdk/client-secrets-manager": "^3.1169.0",
     "@aws-sdk/client-sns": "^3.1169.0",
     "@aws-sdk/client-sqs": "^3.1169.0",
