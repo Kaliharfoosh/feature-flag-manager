@@ -438,7 +438,8 @@ An audit event as returned by the API:
 - `200 OK` with the same body when the issue already exists (GitHub is not called again).
 - Errors: `400` (auditId not a number), `401`, `403`, `404` (no alert for that audit id), `409 CONFLICT` (the alert is being sent right now), `502 UPSTREAM_FAILED` (GitHub rejected or timed out within 3 s; the alert stays `failed` with `lastError` and can be retried).
 - The first attempt happens automatically right after the change that raised the alert is committed; this endpoint is the retry.
-- Audit: `alert.issue_requested` with the resulting status.
+- **Floci (alert queue on):** `202 Accepted` with the alert's current body. The retry is put on the SQS queue and the worker opens the issue a few seconds later; the API function itself never calls GitHub there (it cannot read the token).
+- Audit: `alert.issue_requested` with the resulting status (`queued` on Floci).
 
 ### GET /alerts — the team's latest alerts (for the Retry button)
 
@@ -446,6 +447,20 @@ An audit event as returned by the API:
 - `200 OK`: `{ "items": [ { "alertId", "auditEventId", "rule", "title", "status", "githubIssueNumber", "githubIssueUrl", "lastError", "createdAt" } ] }`, newest first, at most 50.
 - Errors: `401`, `403`.
 - The GitHub token is read from the server environment only and never appears in any response or log.
+
+### GET /alerts/dead-letters — the team's alerts in the dead-letter queue
+
+- Who: Admin
+- `200 OK`: `{ "enabled": true, "deadLetters": 1, "complete": true }`. Counts only this team's alerts that failed 3 times in the worker (SQS `ffm-alerts-dlq`). `complete: false` means more than 100 messages were in the queue and the count may be higher.
+- On Vercel (no queue): `{ "enabled": false, "deadLetters": 0, "complete": true }`.
+- Errors: `401`, `403`.
+
+### POST /alerts/dead-letters/replay — give the team's dead letters 3 more tries
+
+- Who: Admin. Needs `X-CSRF-Token`. Body: none.
+- `200 OK`: `{ "replayed": 1, "complete": true }`. Each of the team's alert ids goes back on the main queue and is then removed from the dead-letter queue. Other teams' messages are not touched.
+- Errors: `401`, `403`, `409 CONFLICT` (no queue on this deployment).
+- Audit: `alert.replayed` with `details.count`.
 
 ---
 

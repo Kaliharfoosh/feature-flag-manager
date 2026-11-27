@@ -74,6 +74,11 @@ export const listAlerts = (signal) => request('/alerts', { signal })
 export const retryAlert = (auditEventId, csrfToken) =>
   request(`/alerts/${encodeURIComponent(auditEventId)}/github-issue`, { method: 'POST', csrfToken })
 
+export const getDeadLetters = (signal) => request('/alerts/dead-letters', { signal })
+
+export const replayDeadLetters = (csrfToken) =>
+  request('/alerts/dead-letters/replay', { method: 'POST', csrfToken })
+
 export const getAlertRules = (signal) => request('/alert-rules', { signal })
 
 export const saveAlertRules = (rules, csrfToken) =>

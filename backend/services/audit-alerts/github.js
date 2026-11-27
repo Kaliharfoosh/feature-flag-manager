@@ -191,6 +191,14 @@ function toApi(row) {
   };
 }
 
+// Which of these alert ids belong to the team (for the dead-letter scan in queue.js).
+async function alertIdsOfTeam(teamId, ids, db = pool) {
+  const valid = ids.filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
+  if (valid.length === 0) return new Set();
+  const { rows } = await db.query('SELECT id FROM alerts WHERE team_id = $1 AND id = ANY($2::uuid[])', [teamId, valid]);
+  return new Set(rows.map((r) => r.id));
+}
+
 async function listAlerts(teamId, db = pool) {
   const { rows } = await db.query(
     'SELECT * FROM alerts WHERE team_id = $1 ORDER BY created_at DESC, id LIMIT 50',
@@ -200,6 +208,6 @@ async function listAlerts(teamId, db = pool) {
 }
 
 module.exports = {
-  createIssue, deliver, deliverPending, findAlertForEvent, listAlerts, toApi,
+  createIssue, deliver, deliverPending, findAlertForEvent, listAlerts, alertIdsOfTeam, toApi,
   issueTitle, issueBody, TIMEOUT_MS,
 };

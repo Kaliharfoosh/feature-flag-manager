@@ -35,6 +35,7 @@ GH_SECRET="ffm/github-token"
 ALARM="ffm-failed-logins"
 NAMESPACE="FFM"        # CloudWatch metrics from shared/metrics.js
 PRODUCERS=(ffm-flags-fn ffm-eval-fn ffm-audit-fn)   # every function that can raise an alert
+DLQ_READER="ffm-audit-fn"                            # the monitoring page: counts and replays the DLQ
 
 TOPIC_ARN="arn:aws:sns:${REGION}:${ACCOUNT_ID}:${TOPIC}"
 QUEUE_ARN="arn:aws:sqs:${REGION}:${ACCOUNT_ID}:${QUEUE}"
@@ -105,7 +106,17 @@ node -e "
   require('fs').writeFileSync('$TMP/queue-policy.json', JSON.stringify({ Policy: JSON.stringify(policy) }));
 " "$ACCOUNT_ID" "$REGION" "$QUEUE_ARN" "$WORKER_ROLE" ffm-flags-role ffm-eval-role ffm-audit-role
 awsl sqs set-queue-attributes --queue-url "$QUEUE_URL" --attributes "file://$TMP/queue-policy.json"
-echo "  queue       ${QUEUE_URL} (visibility ${VISIBILITY} s, DLQ after ${MAX_TRIES})"
+# DLQ policy: only the audit function (monitoring page) may read, replay or delete dead letters.
+node -e "
+  const [acc, dlqArn, reader] = process.argv.slice(1);
+  const policy = { Version: '2012-10-17', Statement: [
+    { Sid: 'OnlyTheMonitoringPageReads', Effect: 'Allow', Principal: { AWS: 'arn:aws:iam::' + acc + ':role/' + reader },
+      Action: ['sqs:ReceiveMessage', 'sqs:DeleteMessage', 'sqs:ChangeMessageVisibility', 'sqs:GetQueueAttributes'],
+      Resource: dlqArn } ] };
+  require('fs').writeFileSync('$TMP/dlq-queue-policy.json', JSON.stringify({ Policy: JSON.stringify(policy) }));
+" "$ACCOUNT_ID" "$DLQ_ARN" ffm-audit-role
+awsl sqs set-queue-attributes --queue-url "$DLQ_URL" --attributes "file://$TMP/dlq-queue-policy.json"
+echo "  queue      ${QUEUE_URL} (visibility ${VISIBILITY} s, DLQ after ${MAX_TRIES})"
 echo "  DLQ         ${DLQ_URL} (kept 14 days)"
 echo "[3/7] done"
 
@@ -192,6 +203,11 @@ cat > "$TMP/metrics-policy.json" <<JSON
   "Action": "cloudwatch:PutMetricData", "Resource": "*",
   "Condition": { "StringEquals": { "cloudwatch:namespace": "${NAMESPACE}" } } } ] }
 JSON
+cat > "$TMP/dlq-policy.json" <<JSON
+{ "Version": "2012-10-17", "Statement": [ { "Sid": "CountAndReplayOnlyTheAlertDLQ", "Effect": "Allow",
+  "Action": ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:ChangeMessageVisibility", "sqs:GetQueueAttributes"],
+  "Resource": "${DLQ_ARN}" } ] }
+JSON
 MISSING=0
 for fn in "${PRODUCERS[@]}"; do
   if ! awsl lambda get-function --function-name "$fn" >/dev/null 2>&1; then
@@ -200,7 +216,15 @@ for fn in "${PRODUCERS[@]}"; do
   role=$(awsl lambda get-function-configuration --function-name "$fn" --query Role --output text)
   awsl iam put-role-policy --role-name "${role##*/}" --policy-name ffm-alerts-send \
     --policy-document "file://$TMP/send-policy.json"
-  awsl iam put-role-policy --role-name "${role##*/}" --policy-name ffm-metrics-put     --policy-document "file://$TMP/metrics-policy.json"
+  awsl iam put-role-policy --role-name "${role##*/}" --policy-name ffm-metrics-put \
+    --policy-document "file://$TMP/metrics-policy.json"
+  # Only the audit function (the monitoring page) may read the DLQ, to count and replay it.
+  dlq_url=""
+  if [ "$fn" = "$DLQ_READER" ]; then
+    awsl iam put-role-policy --role-name "${role##*/}" --policy-name ffm-dlq-replay \
+      --policy-document "file://$TMP/dlq-policy.json"
+    dlq_url="$DLQ_URL"
+  fi
   awsl lambda get-function-configuration --function-name "$fn" --query Environment.Variables --output json \
     > "$TMP/env.json"
   node -e "
@@ -209,10 +233,11 @@ for fn in "${PRODUCERS[@]}"; do
     try { vars = JSON.parse(fs.readFileSync('$TMP/env.json', 'utf8')) || {}; } catch {}
     vars.ALERTS_QUEUE_URL = process.argv[1];
     vars.METRICS_NAMESPACE = process.argv[2];
+    if (process.argv[3]) vars.ALERTS_DLQ_URL = process.argv[3]; else delete vars.ALERTS_DLQ_URL;
     fs.writeFileSync('$TMP/env.json', JSON.stringify({ Variables: vars }));
-  " "$QUEUE_URL" "$NAMESPACE"
+  " "$QUEUE_URL" "$NAMESPACE" "$dlq_url"
   awsl lambda update-function-configuration --function-name "$fn" --environment "file://$TMP/env.json" >/dev/null
-  echo "  ${fn}: ALERTS_QUEUE_URL + METRICS_NAMESPACE set, role ${role##*/} may send to both"
+  echo "  ${fn}: ALERTS_QUEUE_URL + METRICS_NAMESPACE${dlq_url:+ + ALERTS_DLQ_URL} set, role ${role##*/} may use them"
 done
 echo "[6/7] done"
 

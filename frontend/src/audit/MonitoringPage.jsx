@@ -1,6 +1,6 @@
 // Monitoring page (S3, Admin only): security numbers for a time window, an hourly chart, the IPs
-// with the most failed logins, the alerts with their GitHub issue status (Retry for failed ones),
-// and the three alert rules. The API refuses all of this to Developers with 403.
+// with the most failed logins, the alert queue's dead letters (Replay, Floci only), the alerts
+// with their GitHub issue status (Retry for failed ones), and the three alert rules. The API refuses all of this to Developers with 403.
 import { useEffect, useState } from 'react'
 import '../flags/FlagsPage.css'
 import './AuditPages.css'
@@ -57,6 +57,7 @@ function useLoad(load, key) {
 
 const loadAlerts = (_, signal) => api.listAlerts(signal)
 const loadRules = (_, signal) => api.getAlertRules(signal)
+const loadDeadLetters = (_, signal) => api.getDeadLetters(signal)
 
 function HourlyChart({ series }) {
   const [hovered, setHovered] = useState(null)
@@ -125,8 +126,60 @@ function HourlyChart({ series }) {
   )
 }
 
-function AlertList({ csrfToken }) {
-  const [current, setLoaded] = useLoad(loadAlerts, 'alerts')
+// The team's alerts that failed 3 times in the worker (Floci's SQS dead-letter queue), with a
+// Replay button that gives them 3 more tries. On Vercel there is no queue and the card says so.
+function DeadLetters({ csrfToken, refreshKey, onReplayed }) {
+  const [current, setLoaded] = useLoad(loadDeadLetters, refreshKey)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState(null)
+  const data = current?.data
+
+  async function replay() {
+    setBusy(true)
+    setMessage(null)
+    try {
+      const { replayed } = await api.replayDeadLetters(csrfToken)
+      setLoaded((prev) => ({ ...prev, data: { ...prev.data, deadLetters: 0 } }))
+      setMessage({ kind: 'ok', text: replayed === 1 ? '1 alert is back in the queue.' : `${replayed} alerts are back in the queue.` })
+      onReplayed()
+    } catch (error) {
+      setMessage({ kind: 'error', text: error.message })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="flags-card" aria-labelledby="outbox-heading">
+      <div className="flags-toolbar">
+        <h2 id="outbox-heading" className="audit-heading">Alert queue</h2>
+        <p className="audit-hint">Alerts wait in a queue (Amazon SQS) and a worker opens the GitHub issue. After 3 failed tries an alert moves to the dead-letter queue.</p>
+      </div>
+      {!current && <p className="flags-message" role="status">Loading…</p>}
+      {current?.error && <p className="flags-message" role="alert">{current.error}</p>}
+      {data && !data.enabled && <p className="flags-message" role="status">This deployment sends alerts directly, without a queue.</p>}
+      {data?.enabled && (
+        <div className="outbox-row">
+          <dl className="stat-tiles">
+            <div className="stat-tile">
+              <dt>In the dead-letter queue</dt>
+              <dd>{data.deadLetters.toLocaleString('en')}{data.complete ? '' : '+'}</dd>
+            </div>
+          </dl>
+          <div className="rule-actions">
+            <button type="button" className="flag-button audit-apply" onClick={replay} disabled={busy || data.deadLetters === 0}>
+              {busy ? 'Replaying…' : 'Replay'}
+            </button>
+            {message && <p className={message.kind === 'ok' ? 'audit-ok' : 'alert-error'} role={message.kind === 'ok' ? 'status' : 'alert'}>{message.text}</p>}
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function AlertList({ csrfToken, refreshKey }) {
+  const [current, setLoaded] = useLoad(loadAlerts, refreshKey)
   const [busy, setBusy] = useState(null)
   const [messages, setMessages] = useState({})
 
@@ -135,10 +188,16 @@ function AlertList({ csrfToken }) {
     setMessages({ ...messages, [alert.alertId]: null })
     try {
       const updated = await api.retryAlert(alert.auditEventId, csrfToken)
-      setLoaded((prev) => ({ ...prev, data: { items: prev.data.items.map((a) => (a.alertId === updated.alertId ? updated : a)) } }))
+      if (updated.status === 'sent') {
+        setLoaded((prev) => ({ ...prev, data: { items: prev.data.items.map((a) => (a.alertId === updated.alertId ? updated : a)) } }))
+      } else {
+        // 202 on Floci: queued for the worker, which opens the issue in a few seconds.
+        setLoaded((prev) => ({ ...prev, data: { items: prev.data.items.map((a) => (a.alertId === alert.alertId ? { ...a, status: 'open' } : a)) } }))
+        setMessages({ ...messages, [alert.alertId]: { kind: 'ok', text: 'Queued. Reload in a few seconds to see the issue.' } })
+      }
     } catch (error) {
       // 502: GitHub refused or timed out. The alert stays "failed" with the reason; show both.
-      setMessages({ ...messages, [alert.alertId]: error.message })
+      setMessages({ ...messages, [alert.alertId]: { kind: 'error', text: error.message } })
       if (error.status === 502) {
         setLoaded((prev) => ({ ...prev, data: { items: prev.data.items.map((a) => (a.alertId === alert.alertId ? { ...a, status: 'failed', lastError: error.message } : a)) } }))
       }
@@ -166,7 +225,8 @@ function AlertList({ csrfToken }) {
                   {RULES[alert.rule]?.[0] ?? alert.rule} · <time dateTime={alert.createdAt}>{when.format(new Date(alert.createdAt))}</time> · audit event #{alert.auditEventId}
                 </span>
                 {alert.status === 'failed' && alert.lastError && <span className="alert-error">{alert.lastError}</span>}
-                {messages[alert.alertId] && alert.status !== 'failed' && <span className="alert-error" role="alert">{messages[alert.alertId]}</span>}
+                {messages[alert.alertId]?.kind === 'ok' && <span className="audit-ok" role="status">{messages[alert.alertId].text}</span>}
+                {messages[alert.alertId]?.kind === 'error' && alert.status !== 'failed' && <span className="alert-error" role="alert">{messages[alert.alertId].text}</span>}
               </div>
               <div className="alert-side">
                 <span className={`audit-badge alert-status-${alert.status}`}>{STATUS[alert.status] ?? alert.status}</span>
@@ -262,6 +322,7 @@ export default function MonitoringPage({ session }) {
 
 function MonitoringDashboard({ session }) {
   const [hours, setHours] = useState(24)
+  const [refresh, setRefresh] = useState(0) // bumped after a replay, to reload the alert list
   const [current] = useLoad(api.getMonitoring, hours)
   const data = current?.data
   return (
@@ -308,7 +369,8 @@ function MonitoringDashboard({ session }) {
         )}
       </section>
 
-      <AlertList csrfToken={session.csrfToken} />
+      <DeadLetters csrfToken={session.csrfToken} refreshKey="dead-letters" onReplayed={() => setRefresh((n) => n + 1)} />
+      <AlertList csrfToken={session.csrfToken} refreshKey={`alerts-${refresh}`} />
       <AlertRules csrfToken={session.csrfToken} />
     </section>
   )

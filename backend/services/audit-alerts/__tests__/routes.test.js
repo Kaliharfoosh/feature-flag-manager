@@ -285,6 +285,79 @@ describe('POST /alerts/:auditId/github-issue', () => {
   });
 });
 
+describe('the SQS outbox on Floci (ALERTS_QUEUE_URL, ALERTS_DLQ_URL set)', () => {
+  const queue = require('../queue');
+  const QUEUE = 'http://floci:4566/000000000000/ffm-alerts-queue';
+  const DLQ = 'http://floci:4566/000000000000/ffm-alerts-dlq';
+  let enqueue;
+  let scan;
+  beforeEach(() => {
+    enqueue = jest.spyOn(queue, 'enqueue').mockResolvedValue();
+    scan = jest.spyOn(queue, 'scanDeadLetters');
+  });
+  afterEach(() => {
+    delete process.env.ALERTS_QUEUE_URL;
+    delete process.env.ALERTS_DLQ_URL;
+    enqueue.mockRestore();
+    scan.mockRestore();
+  });
+  const outboxOn = () => { process.env.ALERTS_QUEUE_URL = QUEUE; process.env.ALERTS_DLQ_URL = DLQ; };
+
+  test('Retry is queued for the worker (202): this function never calls GitHub itself', async () => {
+    outboxOn();
+    github.findAlertForEvent.mockResolvedValue({ id: 'al1', team_id: teamId, audit_event_id: '1042', rule: 'prod_change', title: 'Prod change', status: 'failed', created_at: new Date() });
+    const { agent, csrf } = await signIn('admin');
+    const res = await agent.post(`${api}/alerts/1042/github-issue`).set('X-CSRF-Token', csrf).expect(202);
+    expect(res.body).toMatchObject({ alertId: 'al1', status: 'failed' });
+    expect(enqueue).toHaveBeenCalledWith('al1');
+    expect(github.deliver).not.toHaveBeenCalled();
+    expect(insertedActions(pool.query)).toEqual(['alert.issue_requested']);
+  });
+
+  test('GET /alerts/dead-letters counts only this team (the scan is scoped by the session team)', async () => {
+    outboxOn();
+    scan.mockImplementation(async ({ ownedBy }) => {
+      await ownedBy(['3f1c2b9e-0000-4000-8000-000000000001']);
+      return { deadLetters: 2, replayed: 0, scanned: 5, complete: true };
+    });
+    const { agent } = await signIn('admin');
+    const res = await agent.get(`${api}/alerts/dead-letters`).expect(200);
+    expect(res.body).toEqual({ enabled: true, deadLetters: 2, complete: true });
+    expect(res.headers['cache-control']).toBe('no-store');
+    const lookup = pool.query.mock.calls.find(([sql]) => sql.includes('FROM alerts WHERE team_id'));
+    expect(lookup[1][0]).toBe(teamId);
+    expect(scan.mock.calls[0][0].replay).toBeFalsy();
+  });
+
+  test('POST /alerts/dead-letters/replay moves them back and is audited as alert.replayed', async () => {
+    outboxOn();
+    scan.mockResolvedValue({ deadLetters: 2, replayed: 2, scanned: 5, complete: true });
+    const { agent, csrf } = await signIn('admin');
+    const res = await agent.post(`${api}/alerts/dead-letters/replay`).set('X-CSRF-Token', csrf).expect(200);
+    expect(res.body).toEqual({ replayed: 2, complete: true });
+    expect(scan.mock.calls[0][0].replay).toBe(true);
+    expect(insertedActions(pool.query)).toEqual(['alert.replayed']);
+  });
+
+  test('Vercel (no queue): the card says so, replay is 409', async () => {
+    const { agent, csrf } = await signIn('admin');
+    await agent.get(`${api}/alerts/dead-letters`).expect(200, { enabled: false, deadLetters: 0, complete: true });
+    const res = await agent.post(`${api}/alerts/dead-letters/replay`).set('X-CSRF-Token', csrf).expect(409);
+    expect(res.body.error.code).toBe('CONFLICT');
+    expect(scan).not.toHaveBeenCalled();
+  });
+
+  test('Developers get 403 for both; replay needs CSRF', async () => {
+    outboxOn();
+    const dev = await signIn('developer');
+    await dev.agent.get(`${api}/alerts/dead-letters`).expect(403);
+    await dev.agent.post(`${api}/alerts/dead-letters/replay`).set('X-CSRF-Token', dev.csrf).expect(403);
+    const admin = await signIn('admin');
+    await admin.agent.post(`${api}/alerts/dead-letters/replay`).expect(403);
+    expect(scan).not.toHaveBeenCalled();
+  });
+});
+
 describe('shared behaviour', () => {
   test('an unknown /api/v1 path is still 404, not 401', async () => {
     const res = await request(app).get(`${api}/no-such-route`).expect(404);

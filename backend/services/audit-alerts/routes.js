@@ -19,6 +19,8 @@ router.get('/monitoring', noStore, ...admin, c.monitoring);
 router.get('/alert-rules', noStore, ...admin, c.getAlertRules);
 router.put('/alert-rules', noStore, ...admin, requireCsrf, c.putAlertRules);
 router.get('/alerts', noStore, ...admin, c.listAlerts);
+router.get('/alerts/dead-letters', noStore, ...admin, c.deadLetters);
+router.post('/alerts/dead-letters/replay', noStore, ...admin, requireCsrf, c.replayDeadLetters);
 router.post('/alerts/:auditId/github-issue', noStore, ...admin, requireCsrf, c.createGithubIssue);
 
 module.exports = router;
