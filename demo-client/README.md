@@ -1,21 +1,21 @@
 # Demo client: Acme Store (S2)
 
 A small online shop that shows **why** the Feature Flag Manager exists. Every feature of the shop
-is switched by one of the "Acme Web" team's flags in the Feature Flag Manager: 28 flags, from the
+is switched by one of the "Acme Web" team's flags in the Feature Flag Manager: 28 flags (plus 2 spare demo keys, below), from the
 winter banner and dark mode to Apple Pay, gift wrap and the new one-page checkout. Change a flag
 or a rollout percentage in the Feature Flag Manager, press **Refresh flags** in the store, and the
 shop changes with no redeploy.
 
 ```
 browser ──GET /api/flags?user=u-981──▶ store server function ──POST /api/v1/evaluations/batch──▶ Feature Flag Manager
-        ◀── 28 × { key, enabled } ───                         ◀── Bearer ffm_stg_… (secret) ──
+        ◀── 30 × { key, enabled } ───                         ◀── Bearer ffm_stg_… (secret) ──
 ```
 
 ## What it shows
 
 | Area | Flags |
 |---|---|
-| Site | `promo-banner-winter`, `black-friday-2025` (archived), `dark-mode`, `currency-switcher`, `store-locator`, `search-filters-v2`, `live-chat`, `newsletter-popup` |
+| Site | `promo-banner-winter`, `black-friday-2025` (archived), `dark-mode`, `currency-switcher`, `store-locator`, `search-filters-v2`, `live-chat`, `newsletter-popup`, `free-shipping-banner`, `free-shipping-banner-2` (spare demo keys) |
 | Products | `product-reviews-v2`, `recommendations-ml`, `size-guide`, `stock-alerts`, `wishlist-sharing` |
 | Basket | `gift-wrap`, `bundle-discounts` |
 | Checkout | `new-checkout`, `guest-checkout`, `address-autocomplete`, `express-shipping`, `apple-pay`, `google-pay`, `paypal-v1` (archived) |

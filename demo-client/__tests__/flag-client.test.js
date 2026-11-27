@@ -13,6 +13,17 @@ describe('store flag list', () => {
     for (const key of STORE_FLAG_KEYS) expect(key).toMatch(/^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$/);
     for (const f of STORE_FLAGS) expect(f.label && f.area).toBeTruthy();
   });
+
+  test('the spare demo keys are in the store list but NOT seeded, so they can be created live', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const seedDir = path.join(__dirname, '..', '..', 'backend', 'db');
+    const seeds = ['seed.js', 'seed-demo.js'].map((f) => fs.readFileSync(path.join(seedDir, f), 'utf8')).join('\n');
+    for (const key of ['free-shipping-banner', 'free-shipping-banner-2']) {
+      expect(STORE_FLAG_KEYS).toContain(key);
+      expect(seeds).not.toContain(`'${key}'`);
+    }
+  });
 });
 
 describe('checkFlags', () => {

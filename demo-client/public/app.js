@@ -275,7 +275,7 @@ function renderHero() {
   const r = state.result;
   if (!r) return;
   const live = r.flags.filter((f) => f.enabled).length;
-  $('stat-total').textContent = String(r.flags.length || 28);
+  $('stat-total').textContent = String(r.flags.length || 30);
   countTo($('stat-live'), live);
   $('stat-ms').textContent = r.source === 'api' ? `${r.ms} ms` : 'fallback';
   $('stat-who').textContent = shopper().name;
@@ -285,6 +285,12 @@ function renderBanners() {
   const banners = [];
   if (on('black-friday-2025')) { // archived, so the Feature Flag Manager always says off
     banners.push(el('div', { class: 'banner banner-sale' }, 'Black Friday 2025: everything 40% off', tag('black-friday-2025')));
+  }
+  // Spare demo flags (see lib/store-flags.js): created live in the Feature Flag Manager on camera.
+  for (const key of ['free-shipping-banner', 'free-shipping-banner-2']) {
+    if (on(key)) {
+      banners.push(el('div', { class: 'banner banner-ship' }, '🚚 Free shipping today on every order, no minimum spend', tag(key)));
+    }
   }
   if (on('promo-banner-winter')) {
     banners.push(el('div', { class: 'banner' }, '❄ Winter sale: free delivery on orders over £50 until 31 December', tag('promo-banner-winter')));

@@ -15,6 +15,11 @@ const STORE_FLAGS = [
   { key: 'search-filters-v2', label: 'Search filters v2', area: 'Site' },
   { key: 'live-chat', label: 'Live chat support', area: 'Site' },
   { key: 'newsletter-popup', label: 'Newsletter popup', area: 'Site' },
+  // Spare keys for the demo video: they are NOT in the seed, so the store shows them as
+  // "not in FFM" (off) until someone creates the flag live in the Feature Flag Manager.
+  // Two of them, so one can be used for a practice run (then archived) and one for the real take.
+  { key: 'free-shipping-banner', label: 'Free shipping banner (demo: create live)', area: 'Site' },
+  { key: 'free-shipping-banner-2', label: 'Free shipping banner 2 (demo: create live)', area: 'Site' },
   // Products
   { key: 'product-reviews-v2', label: 'Product reviews v2', area: 'Products' },
   { key: 'recommendations-ml', label: 'ML recommendations', area: 'Products' },
