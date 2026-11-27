@@ -10,7 +10,7 @@
 ![Express 5](https://img.shields.io/badge/Express-5-000000?logo=express&logoColor=white)
 ![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Neon-4169E1?logo=postgresql&logoColor=white)
-![AWS on Floci](https://img.shields.io/badge/AWS-Lambda%20%C2%B7%20API%20Gateway%20%C2%B7%20SQS%20%C2%B7%20SNS-FF9900?logo=amazonwebservices&logoColor=white)
+![AWS on Floci](https://img.shields.io/badge/AWS-Lambda%20%7C%20API%20Gateway%20%7C%20SQS%20%7C%20SNS-FF9900)
 
 [**Live app**](https://feature-flag-manager-cyan.vercel.app) ·
 [**Demo store**](https://ffm-demo-shop.vercel.app) ·
