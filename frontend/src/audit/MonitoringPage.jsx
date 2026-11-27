@@ -1,6 +1,7 @@
-// Monitoring page (S3, Admin only): security numbers for a time window, an hourly chart, the IPs
-// with the most failed logins, the alert queue's dead letters (Replay, Floci only), the alerts
-// with their GitHub issue status (Retry for failed ones), and the three alert rules. The API refuses all of this to Developers with 403.
+// Monitoring page (S3, Admin only): a threat level, security numbers for a time window, a timeline
+// chart, bar charts of attacks by type, refused endpoints and attacking IPs, a live mode, the alert
+// queue's dead letters (Replay, Floci only), the alerts with their GitHub issue status (Retry for
+// failed ones), and the three alert rules. The API refuses all of this to Developers with 403.
 import { useEffect, useState } from 'react'
 import '../flags/FlagsPage.css'
 import './AuditPages.css'
@@ -9,6 +10,17 @@ import * as api from './api'
 const WINDOWS = [[1, '1 hour'], [24, '24 hours'], [168, '7 days']]
 const when = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' })
 const hourLabel = new Intl.DateTimeFormat('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' })
+const minuteLabel = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' })
+const LIVE_MS = 10000
+
+// The bar chart "Attacks by type": every kind of refused or failed request the API records.
+const ATTACK_TYPES = [
+  ['failedLogins', 'Failed logins (brute force)'],
+  ['forbidden', 'Refused, wrong role (403)'],
+  ['botCheckFailures', 'Bot check failed'],
+  ['rateLimited', 'Rate limited (429)'],
+  ['serverErrors', 'Server errors (5xx)'],
+]
 
 const TILES = [
   ['botCheckFailures', 'Bot checks failed'],
@@ -58,8 +70,51 @@ function useLoad(load, key) {
 const loadAlerts = (_, signal) => api.listAlerts(signal)
 const loadRules = (_, signal) => api.getAlertRules(signal)
 const loadDeadLetters = (_, signal) => api.getDeadLetters(signal)
+const loadMonitoring = (key, signal) => api.getMonitoring(Number(key.split(':')[0]), signal)
 
-function HourlyChart({ series }) {
+// One-hue horizontal bars, largest first, each value written on its bar (no legend needed).
+function BarList({ title, rows, empty, mono = false }) {
+  const max = Math.max(1, ...rows.map((r) => r.value))
+  return (
+    <figure className="bar-list">
+      <figcaption>{title}</figcaption>
+      {rows.length === 0
+        ? <p className="audit-meta">{empty}</p>
+        : (
+          <ol>
+            {rows.map((r) => (
+              <li key={r.label} title={`${r.label}: ${r.value}`}>
+                <span className={mono ? 'bar-label bar-mono' : 'bar-label'}>{r.label}</span>
+                <b>{r.value.toLocaleString('en')}</b>
+                <span className="bar-track" aria-hidden="true"><span className="bar-fill" style={{ width: `${(r.value / max) * 100}%` }} /></span>
+              </li>
+            ))}
+          </ol>
+        )}
+    </figure>
+  )
+}
+
+// How worried to be, from the numbers in this window. Shown with an icon and a word, never colour alone.
+function threat(data) {
+  if (data.failedLogins >= 10 || data.rateLimited > 0 || data.serverErrors >= 5) return ['high', '▲', 'High', 'brute force or rate limiting in progress']
+  if (data.failedLogins >= 3 || data.forbidden >= 5 || data.botCheckFailures >= 3) return ['elevated', '◆', 'Elevated', 'repeated refusals: someone is probing']
+  return ['normal', '●', 'Normal', 'nothing unusual']
+}
+
+function ThreatLevel({ data }) {
+  const [level, icon, word, why] = threat(data)
+  return (
+    <div className={`threat threat-${level}`} role="status">
+      <span className="threat-icon" aria-hidden="true">{icon}</span>
+      <span><b>Threat level: {word}</b> <span className="threat-why">· {why}</span></span>
+      <span className="threat-rule">High: 10+ failed logins, any 429, or 5+ server errors · Elevated: 3+ failed logins, 5+ refusals or 3+ failed bot checks</span>
+    </div>
+  )
+}
+
+function HourlyChart({ series, bucketMinutes = 60 }) {
+  const label = (iso) => (bucketMinutes < 60 ? minuteLabel : hourLabel).format(new Date(iso))
   const [hovered, setHovered] = useState(null)
   const totals = series.map((point) => SERIES.reduce((sum, [key]) => sum + point[key], 0))
   const max = Math.max(1, ...totals)
@@ -68,7 +123,7 @@ function HourlyChart({ series }) {
 
   return (
     <figure className="hour-chart">
-      <figcaption>Security events per hour</figcaption>
+      <figcaption>Security events per {bucketMinutes < 60 ? `${bucketMinutes} minutes` : 'hour'}</figcaption>
       <ul className="chart-legend" aria-label="Legend">
         {SERIES.map(([key, label], i) => (
           <li key={key}><span className={`swatch series-${i + 1}`} aria-hidden="true" />{label}</li>
@@ -82,7 +137,7 @@ function HourlyChart({ series }) {
               key={p.hour}
               type="button"
               className="hour-column"
-              aria-label={`${hourLabel.format(new Date(p.hour))}: ${SERIES.map(([key, label]) => `${label} ${p[key]}`).join(', ')}`}
+              aria-label={`${label(p.hour)}: ${SERIES.map(([key, label]) => `${label} ${p[key]}`).join(', ')}`}
               onMouseEnter={() => setHovered(i)}
               onFocus={() => setHovered(i)}
               onBlur={() => setHovered(null)}
@@ -97,7 +152,7 @@ function HourlyChart({ series }) {
         </div>
         {point && (
           <div className="hour-tooltip" style={{ left: `${tipLeft}%` }} role="status">
-            <strong>{hourLabel.format(new Date(point.hour))}</strong>
+            <strong>{label(point.hour)}</strong>
             {SERIES.map(([key, label], s) => (
               <span key={key}><span className={`swatch series-${s + 1}`} aria-hidden="true" />{label}<b>{point[key]}</b></span>
             ))}
@@ -105,17 +160,17 @@ function HourlyChart({ series }) {
         )}
       </div>
       <div className="hour-chart-axis" aria-hidden="true">
-        <span>{hourLabel.format(new Date(series[0].hour))}</span>
+        <span>{label(series[0].hour)}</span>
         <span>now</span>
       </div>
       <details className="audit-raw">
         <summary>Show as a table</summary>
         <div className="flags-table-scroll">
           <table className="flags-table chart-table">
-            <thead><tr><th scope="col">Hour</th>{SERIES.map(([key, label]) => <th key={key} scope="col">{label}</th>)}</tr></thead>
+            <thead><tr><th scope="col">{bucketMinutes < 60 ? 'Time' : 'Hour'}</th>{SERIES.map(([key, label]) => <th key={key} scope="col">{label}</th>)}</tr></thead>
             <tbody>
               {series.filter((_, i) => totals[i] > 0).map((p) => (
-                <tr key={p.hour}><th scope="row">{hourLabel.format(new Date(p.hour))}</th>{SERIES.map(([key]) => <td key={key}>{p[key]}</td>)}</tr>
+                <tr key={p.hour}><th scope="row">{label(p.hour)}</th>{SERIES.map(([key]) => <td key={key}>{p[key]}</td>)}</tr>
               ))}
             </tbody>
           </table>
@@ -323,8 +378,21 @@ export default function MonitoringPage({ session }) {
 function MonitoringDashboard({ session }) {
   const [hours, setHours] = useState(24)
   const [refresh, setRefresh] = useState(0) // bumped after a replay, to reload the alert list
-  const [current] = useLoad(api.getMonitoring, hours)
-  const data = current?.data
+  const [live, setLive] = useState(false)
+  const [tick, setTick] = useState(0)
+  const [current] = useLoad(loadMonitoring, `${hours}:${tick}`)
+  // While a live refresh is loading, keep showing the last answer for the same window (no flicker).
+  const [last, setLast] = useState(null)
+  useEffect(() => { if (current?.data) setLast({ hours, data: current.data }) }, [current, hours])
+  const data = current?.data ?? (last?.hours === hours ? last.data : null)
+
+  // Live mode: reload every 10 s, so an attack shows up on the dashboard while it happens.
+  useEffect(() => {
+    if (!live) return undefined
+    const timer = setInterval(() => { if (!document.hidden) setTick((t) => t + 1) }, LIVE_MS)
+    return () => clearInterval(timer)
+  }, [live])
+
   return (
     <section className="flags-view audit-view" aria-labelledby="monitoring-title">
       <div className="flags-intro">
@@ -335,35 +403,48 @@ function MonitoringDashboard({ session }) {
       <section className="flags-card" aria-labelledby="security-heading">
         <div className="flags-toolbar">
           <h2 id="security-heading" className="audit-heading">Security</h2>
-          <div className="flag-filters" role="group" aria-label="Time window">
-            {WINDOWS.map(([h, label]) => (
-              <button key={h} type="button" aria-pressed={hours === h} onClick={() => setHours(h)}>{label}</button>
-            ))}
+          <div className="monitoring-controls">
+            <button type="button" className={live ? 'live-toggle live-on' : 'live-toggle'} aria-pressed={live} onClick={() => setLive((on) => !on)}>
+              <span className="live-dot" aria-hidden="true" /> {live ? 'Live · every 10 s' : 'Go live'}
+            </button>
+            <div className="flag-filters" role="group" aria-label="Time window">
+              {WINDOWS.map(([h, label]) => (
+                <button key={h} type="button" aria-pressed={hours === h} onClick={() => setHours(h)}>{label}</button>
+              ))}
+            </div>
           </div>
         </div>
-        {!current && <p className="flags-message" role="status">Loading…</p>}
+        {!data && !current && <p className="flags-message" role="status">Loading…</p>}
         {current?.error && <p className="flags-message" role="alert">{current.error}</p>}
         {data && (
           <>
+            <ThreatLevel data={data} />
             <dl className="stat-tiles">
               {TILES.map(([key, label]) => (
                 <div key={key} className="stat-tile"><dt>{label}</dt><dd>{data[key].toLocaleString('en')}</dd></div>
               ))}
             </dl>
             <div className="monitoring-grid">
-              <HourlyChart series={data.series} />
-              <div className="top-ips">
-                <h3>Most failed logins by IP</h3>
-                {data.topFailedLoginIps.length === 0
-                  ? <p className="audit-meta">None in this window.</p>
-                  : (
-                    <ol>
-                      {data.topFailedLoginIps.map(({ ip, count }) => (
-                        <li key={ip}><code>{ip}</code><b>{count}</b></li>
-                      ))}
-                    </ol>
-                  )}
-              </div>
+              <HourlyChart series={data.series} bucketMinutes={data.bucketMinutes ?? 60} />
+              <BarList
+                title="Attacks by type"
+                rows={ATTACK_TYPES.map(([key, label]) => ({ label, value: data[key] ?? 0 })).filter((r) => r.value > 0).sort((a, b) => b.value - a.value)}
+                empty="Nothing refused in this window."
+              />
+            </div>
+            <div className="monitoring-grid monitoring-grid-even">
+              <BarList
+                title="Most refused endpoints (403)"
+                mono
+                rows={(data.topRefusedEndpoints ?? []).map(({ endpoint, count }) => ({ label: endpoint || '(unknown)', value: count }))}
+                empty="No refused requests in this window."
+              />
+              <BarList
+                title="Most failed logins by IP"
+                mono
+                rows={data.topFailedLoginIps.map(({ ip, count }) => ({ label: ip, value: count }))}
+                empty="No failed logins in this window."
+              />
             </div>
           </>
         )}
