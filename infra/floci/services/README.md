@@ -7,7 +7,7 @@ style: Git Bash, safe to run again, secrets never printed.
 |---|---|---|
 | `s2-lambdas.sh` | S2 Habiba | **all three Lambdas** (`ffm-flags-fn`, `ffm-eval-fn`, `ffm-audit-fn`), each with its own **secret**, **IAM role** and **log group**, plus **API Gateway** `ffm-http-api` routing every path to the right one, with a throttle on evaluations. S2's counted services: Lambda (`ffm-eval-fn`), API Gateway, Secrets Manager. |
 | `s2-website.sh` | S2 Habiba | the React frontend as the **S3** static website `ffm-web` (http://ffm-web.s3-website.localhost.floci.io:4566), built with the API Gateway address. Website hosting with `index.html` for every route, a read-only public policy (public ACLs stay blocked), and a self-test (site, deep link, API address, bot check, CORS, login config). Run it **after** `s2-lambdas.sh`, and again after any frontend change. |
-| `s1-….sh` | S1 Youssef | to come: S3 snapshots, KMS, EventBridge |
+| `s1-flags.sh` | S1 Youssef | versioned private S3 snapshots, KMS encryption, production EventBridge events to S3's existing SNS topic, and local SES notices for production API-key creation/revocation. Runs after `s2-lambdas.sh` and `s3-audit.sh`; updates only `ffm-flags-fn` and `ffm-flags-role`. SES sender defaults to `security@ffm.local`; override with `SES_FROM_ADDRESS`. Recipients are the team's Admin users. Floci captures mail locally. |
 | `s3-audit.sh` | S3 Ebrahim | the **alert outbox**: **SQS** `ffm-alerts-queue` + `ffm-alerts-dlq` (after 3 tries), processed by Lambda `ffm-alert-worker`; **CloudWatch** alarm `ffm-failed-logins`; **SNS** topic `ffm-ops-alerts` (+ `ffm-ops-inbox` queue subscribed, to show delivery). The GitHub token moves to `ffm/github-token`, readable only by the worker. Run it **after** `s2-lambdas.sh`. S3's counted services: SQS, CloudWatch, SNS, plus **EventBridge Scheduler** (`ffm-alert-sweeper` every 10 min, `ffm-daily-audit-summary` at 06:00 UTC) as a 4th. |
 
 S2 owns the Lambda setup and the API Gateway route table for the whole team, so S1 and S3 only add
@@ -46,7 +46,13 @@ docker compose -f infra/floci/docker-compose.yml up -d   # Floci
 bash infra/floci/services/s2-lambdas.sh                  # Git Bash: build + deploy everything
 bash infra/floci/services/s2-website.sh                  # the frontend on S3, calling that API
 bash infra/floci/services/s3-audit.sh                    # S3's alert outbox, alarm and schedules
+bash infra/floci/services/s1-flags.sh                    # S1 snapshot storage, events and SES
 ```
+
+Run `s1-flags.sh` after `s2-lambdas.sh` and `s3-audit.sh`. If Habiba reruns `s2-lambdas.sh`, run
+`s1-flags.sh` again afterward to restore S1's Lambda settings and permissions. The S1 script
+preserves unrelated environment variables and attaches a separate SES policy to `ffm-flags-role`.
+SES identities are verified only inside Floci; no real email is sent.
 
 **Every run deploys**: it rebuilds `build/lambda.zip` and uploads it to all three functions, so
 run it again after any code change. Roles, log groups, secrets and routes are updated, never
