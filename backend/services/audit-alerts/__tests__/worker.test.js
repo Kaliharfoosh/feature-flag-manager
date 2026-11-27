@@ -43,9 +43,53 @@ describe('processSqsEvent', () => {
     expect(deliver).not.toHaveBeenCalled();
   });
 
-  test('an event without records does nothing', async () => {
+  test('an event with an empty record list does nothing', async () => {
     const deliver = jest.fn();
-    await expect(worker.processSqsEvent({}, { deliver, log: log() })).resolves.toEqual({ processed: 0 });
+    await expect(worker.processSqsEvent({ Records: [] }, { deliver, log: log() })).resolves.toEqual({ processed: 0 });
     expect(deliver).not.toHaveBeenCalled();
+  });
+});
+
+describe('scheduled jobs (EventBridge Scheduler)', () => {
+  const counts = {
+    hours: 24, failedLogins: 12, botCheckFailures: 1, forbidden: 3, serverErrors: 0, rateLimited: 2,
+    changes: 40, prodChanges: 3, alertsRaised: 4, alertsSent: 3, alertsFailedNow: 1,
+  };
+
+  test('sweep puts every stuck alert back on the queue', async () => {
+    const enqueue = jest.fn().mockResolvedValue();
+    const stuck = jest.fn().mockResolvedValue([ID, '3f1c2b9e-0000-4000-8000-000000000002']);
+    await expect(worker.sweep({ stuck, enqueue, log: log() })).resolves.toEqual({ task: 'sweep', requeued: 2 });
+    expect(enqueue.mock.calls.map((c) => c[0])).toEqual([ID, '3f1c2b9e-0000-4000-8000-000000000002']);
+  });
+
+  test('daily summary publishes counts only to the ops topic', async () => {
+    const publish = jest.fn().mockResolvedValue({ MessageId: 'm1' });
+    const env = { OPS_TOPIC_ARN: 'arn:aws:sns:us-east-1:000000000000:ffm-ops-alerts' };
+    const now = new Date('2026-11-27T06:00:00Z');
+    await expect(worker.dailySummary({ summary: async () => counts, publish, env, now, log: log() }))
+      .resolves.toMatchObject({ task: 'daily-summary', failedLogins: 12 });
+    const [input] = publish.mock.calls[0];
+    expect(input.TopicArn).toBe(env.OPS_TOPIC_ARN);
+    expect(input.Subject).toBe('FFM daily audit summary 2026-11-27');
+    expect(input.Subject.length).toBeLessThanOrEqual(100); // SNS limit
+    expect(input.Message).toMatch(/Failed logins\s+12/);
+    expect(input.Message).toMatch(/Production changes\s+3/);
+    expect(input.Message).not.toMatch(/@|\d+\.\d+\.\d+\.\d+/); // no emails or IPs
+  });
+
+  test('daily summary without a topic fails loudly instead of doing nothing', async () => {
+    await expect(worker.dailySummary({ summary: async () => counts, publish: jest.fn(), env: {}, log: log() }))
+      .rejects.toThrow('OPS_TOPIC_ARN');
+  });
+
+  test('handle routes SQS records, the two tasks, and refuses anything else', async () => {
+    const deliver = jest.fn().mockResolvedValue({ status: 'sent' });
+    await expect(worker.handle({ Records: [record(JSON.stringify({ alertId: ID }))] }, { deliver, log: log() }))
+      .resolves.toEqual({ processed: 1 });
+    await expect(worker.handle({ task: 'sweep' }, { stuck: async () => [], enqueue: jest.fn(), log: log() }))
+      .resolves.toEqual({ task: 'sweep', requeued: 0 });
+    await expect(worker.handle({ task: 'drop-tables' })).rejects.toThrow('Unknown event');
+    await expect(worker.handle(undefined)).rejects.toThrow('Unknown event');
   });
 });

@@ -191,6 +191,22 @@ function toApi(row) {
   };
 }
 
+// For the sweeper (EventBridge Scheduler, Floci): alerts that never reached the worker. Still
+// "open" two minutes after they were raised (the request ended before it could queue them), or
+// "sending" for longer than STALE_SENDING (a worker was cut off mid-delivery). "failed" ones are
+// left alone: they are already retried by SQS, then wait in the DLQ for an Admin's Replay.
+async function stuckAlertIds(limit = 50, db = pool) {
+  const { rows } = await db.query(
+    `SELECT id FROM alerts
+      WHERE (status = 'open' AND created_at < now() - interval '2 minutes')
+         OR (status = 'sending' AND updated_at < now() - $1::interval)
+      ORDER BY created_at
+      LIMIT $2`,
+    [STALE_SENDING, limit],
+  );
+  return rows.map((r) => r.id);
+}
+
 // Which of these alert ids belong to the team (for the dead-letter scan in queue.js).
 async function alertIdsOfTeam(teamId, ids, db = pool) {
   const valid = ids.filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
@@ -208,6 +224,6 @@ async function listAlerts(teamId, db = pool) {
 }
 
 module.exports = {
-  createIssue, deliver, deliverPending, findAlertForEvent, listAlerts, alertIdsOfTeam, toApi,
+  createIssue, deliver, deliverPending, findAlertForEvent, listAlerts, alertIdsOfTeam, stuckAlertIds, toApi,
   issueTitle, issueBody, TIMEOUT_MS,
 };
