@@ -1,0 +1,162 @@
+{
+  "checkedAt": "2026-11-27T03:06:46.168Z",
+  "test": "ST-18 / FW1",
+  "target": "https://feature-flag-manager-cyan.vercel.app",
+  "counts": {
+    "400": 20,
+    "429": 5
+  },
+  "pass": true,
+  "results": [
+    {
+      "request": 1,
+      "status": 400,
+      "code": "VALIDATION_ERROR",
+      "mitigated": null
+    },
+    {
+      "request": 2,
+      "status": 400,
+      "code": "VALIDATION_ERROR",
+      "mitigated": null
+    },
+    {
+      "request": 3,
+      "status": 400,
+      "code": "VALIDATION_ERROR",
+      "mitigated": null
+    },
+    {
+      "request": 4,
+      "status": 400,
+      "code": "VALIDATION_ERROR",
+      "mitigated": null
+    },
+    {
+      "request": 5,
+      "status": 400,
+      "code": "VALIDATION_ERROR",
+      "mitigated": null
+    },
+    {
+      "request": 6,
+      "status": 400,
+      "code": "VALIDATION_ERROR",
+      "mitigated": null
+    },
+    {
+      "request": 7,
+      "status": 400,
+      "code": "VALIDATION_ERROR",
+      "mitigated": null
+    },
+    {
+      "request": 8,
+      "status": 400,
+      "code": "VALIDATION_ERROR",
+      "mitigated": null
+    },
+    {
+      "request": 9,
+      "status": 400,
+      "code": "VALIDATION_ERROR",
+      "mitigated": null
+    },
+    {
+      "request": 10,
+      "status": 400,
+      "code": "VALIDATION_ERROR",
+      "mitigated": null
+    },
+    {
+      "request": 11,
+      "status": 400,
+      "code": "VALIDATION_ERROR",
+      "mitigated": null
+    },
+    {
+      "request": 12,
+      "status": 400,
+      "code": "VALIDATION_ERROR",
+      "mitigated": null
+    },
+    {
+      "request": 13,
+      "status": 400,
+      "code": "VALIDATION_ERROR",
+      "mitigated": null
+    },
+    {
+      "request": 14,
+      "status": 400,
+      "code": "VALIDATION_ERROR",
+      "mitigated": null
+    },
+    {
+      "request": 15,
+      "status": 400,
+      "code": "VALIDATION_ERROR",
+      "mitigated": null
+    },
+    {
+      "request": 16,
+      "status": 400,
+      "code": "VALIDATION_ERROR",
+      "mitigated": null
+    },
+    {
+      "request": 17,
+      "status": 400,
+      "code": "VALIDATION_ERROR",
+      "mitigated": null
+    },
+    {
+      "request": 18,
+      "status": 400,
+      "code": "VALIDATION_ERROR",
+      "mitigated": null
+    },
+    {
+      "request": 19,
+      "status": 400,
+      "code": "VALIDATION_ERROR",
+      "mitigated": null
+    },
+    {
+      "request": 20,
+      "status": 400,
+      "code": "VALIDATION_ERROR",
+      "mitigated": null
+    },
+    {
+      "request": 21,
+      "status": 429,
+      "code": "429",
+      "mitigated": "deny"
+    },
+    {
+      "request": 22,
+      "status": 429,
+      "code": "429",
+      "mitigated": "deny"
+    },
+    {
+      "request": 23,
+      "status": 429,
+      "code": "429",
+      "mitigated": "deny"
+    },
+    {
+      "request": 24,
+      "status": 429,
+      "code": "429",
+      "mitigated": "deny"
+    },
+    {
+      "request": 25,
+      "status": 429,
+      "code": "429",
+      "mitigated": "deny"
+    }
+  ]
+}
