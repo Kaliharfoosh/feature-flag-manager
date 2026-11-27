@@ -66,6 +66,8 @@ const state = {
   newsletterShown: false,
   newsletterDismissed: new Set(),
   newsletterTimer: null,
+  animateCards: true,   // play the card entrance once after flags load or the filters change
+  lastItems: null,      // basket count shown last time, to bump the badge when it changes
 };
 
 const on = (key) => state.flags[key] === true;
@@ -97,6 +99,62 @@ function tag(key) {
   return el('span', { class: 'ftag', title: `Shown because the flag ${key} is on for this shopper` }, `⚑ ${key}`);
 }
 
+// ---------- motion helpers (all of them respect "reduce motion") ----------
+const calm = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// A short message at the bottom of the screen that leaves by itself.
+function toast(icon, text) {
+  const node = el('div', { class: 'toast' }, el('span', { class: 'toast-icon', 'aria-hidden': 'true' }, icon), text);
+  $('toasts').append(node);
+  setTimeout(() => {
+    node.classList.add('leaving');
+    node.addEventListener('animationend', () => node.remove(), { once: true });
+  }, 2600);
+}
+
+// Counts a number up (or down) from its old value to the new one.
+function countTo(node, to, format = (n) => String(Math.round(n))) {
+  const from = Number(node.dataset.value ?? 0);
+  node.dataset.value = String(to);
+  if (calm() || from === to) { node.textContent = format(to); return; }
+  const start = performance.now();
+  const ms = 600;
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / ms);
+    const eased = 1 - (1 - t) ** 3;
+    node.textContent = format(from + (to - from) * eased);
+    if (t < 1 && node.dataset.value === String(to)) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+// The product's emoji flies from where it was clicked into the basket button.
+function flyToBasket(fromNode, icon) {
+  const target = document.querySelector('.basket-link');
+  if (!fromNode || !target || calm()) return;
+  const a = fromNode.getBoundingClientRect();
+  const b = target.getBoundingClientRect();
+  const flyer = el('span', { class: 'flyer', 'aria-hidden': 'true' }, icon);
+  document.body.append(flyer);
+  flyer.style.left = `${a.left + a.width / 2 - 20}px`;
+  flyer.style.top = `${a.top + a.height / 2 - 20}px`;
+  const dx = b.left + b.width / 2 - (a.left + a.width / 2);
+  const dy = b.top + b.height / 2 - (a.top + a.height / 2);
+  flyer.animate([
+    { transform: 'translate(0, 0) scale(1) rotate(0deg)', opacity: 1 },
+    { transform: `translate(${dx * 0.5}px, ${dy * 0.5 - 120}px) scale(1.25) rotate(-20deg)`, opacity: 1, offset: 0.5 },
+    { transform: `translate(${dx}px, ${dy}px) scale(.3) rotate(15deg)`, opacity: 0.2 },
+  ], { duration: 800, easing: 'cubic-bezier(.5, 0, .3, 1)' }).finished.then(() => flyer.remove(), () => flyer.remove());
+}
+
+function addToBasket(p, fromNode) {
+  state.basket.set(p.id, (state.basket.get(p.id) ?? 0) + 1);
+  state.placedOrder = null;
+  flyToBasket(fromNode, p.icon);
+  renderAll();
+  toast(p.icon, `${p.name} added to your basket`);
+}
+
 function money(gbp) {
   const currency = on('currency-switcher') ? state.currency : 'GBP';
   return new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(gbp * RATES[currency]);
@@ -121,6 +179,7 @@ function totals() {
 // ---------- loading the flags ----------
 async function loadFlags({ sameShopper = false } = {}) {
   state.loading = true;
+  document.body.classList.add('is-loading');
   renderStatus();
   let result;
   try {
@@ -136,6 +195,15 @@ async function loadFlags({ sameShopper = false } = {}) {
   state.result = result;
   state.flags = Object.fromEntries(result.flags.map((f) => [f.key, f.enabled === true]));
   state.loading = false;
+  state.animateCards = true;
+  document.body.classList.remove('is-loading');
+
+  // After "Refresh flags": say how many features changed, so the live switch is visible.
+  if (state.previous) {
+    const changed = result.flags.filter((f) => f.key in state.previous && state.previous[f.key] !== (f.enabled === true));
+    if (changed.length) toast('⚑', `${changed.length} feature${changed.length === 1 ? '' : 's'} changed: ${changed.slice(0, 3).map((f) => f.key).join(', ')}${changed.length > 3 ? '…' : ''}`);
+    else toast('✓', 'Flags refreshed: nothing changed');
+  }
 
   // A choice that depends on a feature that just went off falls back to the default.
   if (!on('express-shipping')) state.delivery = 'standard';
@@ -172,6 +240,7 @@ function scheduleNewsletter() {
 function renderAll() {
   document.documentElement.classList.toggle('dark', on('dark-mode'));
   renderStatus();
+  renderHero();
   renderBanners();
   renderHeaderTools();
   renderFilters();
@@ -199,6 +268,17 @@ function renderStatus() {
   }
   const onCount = r.flags.filter((f) => f.enabled).length;
   status.textContent = `${onCount} of ${r.flags.length} features on · ${r.env} · ${r.ms} ms, 1 request`;
+}
+
+// The hero's three numbers: how many of the store's features the flags turned on for this shopper.
+function renderHero() {
+  const r = state.result;
+  if (!r) return;
+  const live = r.flags.filter((f) => f.enabled).length;
+  $('stat-total').textContent = String(r.flags.length || 28);
+  countTo($('stat-live'), live);
+  $('stat-ms').textContent = r.source === 'api' ? `${r.ms} ms` : 'fallback';
+  $('stat-who').textContent = shopper().name;
 }
 
 function renderBanners() {
@@ -235,8 +315,13 @@ function renderHeaderTools() {
         el('strong', {}, 'Acme Shoreditch'), el('span', {}, '2.4 miles · open until 19:00'))));
   }
   const { items } = totals();
-  tools.push(el('a', { class: 'tool basket-link', href: '#basket' }, `🛒 Basket (${items})`));
+  const badge = el('span', { class: 'badge', 'aria-label': `${items} items` }, String(items));
+  tools.push(el('a', { class: 'tool basket-link', href: '#basket' }, el('span', { 'aria-hidden': 'true' }, '🛒'), 'Basket', badge));
   fill($('header-tools'), ...tools);
+  if (state.lastItems !== null && items !== state.lastItems && !calm()) {
+    requestAnimationFrame(() => badge.classList.add('bump'));
+  }
+  state.lastItems = items;
 }
 
 function renderFilters() {
@@ -255,7 +340,7 @@ function renderFilters() {
     el('div', { class: 'chips', role: 'group', 'aria-label': 'Category' },
       ...cats.map((c) => el('button', {
         type: 'button', class: c === state.category ? 'chip chip-on' : 'chip', 'aria-pressed': String(c === state.category),
-        onClick: () => { state.category = c; renderFilters(); renderProducts(); },
+        onClick: () => { state.category = c; state.animateCards = true; renderFilters(); renderProducts(); },
       }, c))),
     el('label', { class: 'check' }, el('input', {
       type: 'checkbox', checked: state.inStockOnly,
@@ -343,44 +428,74 @@ function buyArea(p) {
   if (!p.outOfStock) {
     return el('button', {
       type: 'button', class: 'primary',
-      onClick: () => { state.basket.set(p.id, (state.basket.get(p.id) ?? 0) + 1); state.placedOrder = null; renderAll(); },
-    }, 'Add to basket');
+      onClick: (e) => addToBasket(p, e.currentTarget.closest('.product')?.querySelector('.art-emoji')),
+    }, 'Add to basket ', el('span', { 'aria-hidden': 'true' }, '+'));
   }
   if (on('stock-alerts')) {
     const asked = state.stockAlerts.has(p.id);
     return el('div', { class: 'stack' },
       el('button', {
         type: 'button', class: 'secondary', disabled: asked,
-        onClick: () => { state.stockAlerts.add(p.id); renderProducts(); },
+        onClick: () => { state.stockAlerts.add(p.id); renderProducts(); toast('🔔', `We will email you when the ${p.name.toLowerCase()} are back`); },
       }, asked ? '✓ We will email you' : '🔔 Email me when it is back'),
       tag('stock-alerts'));
   }
   return el('button', { type: 'button', class: 'secondary', disabled: true }, 'Out of stock');
 }
 
-function productCard(p) {
+// 3D tilt and a spotlight that follow the pointer. Only custom properties are set (CSSOM), which
+// the page's CSP allows; the transform itself lives in styles.css.
+function tilt(event) {
+  if (calm() || event.pointerType === 'touch') return;
+  const card = event.currentTarget;
+  const r = card.getBoundingClientRect();
+  const x = (event.clientX - r.left) / r.width;
+  const y = (event.clientY - r.top) / r.height;
+  card.classList.add('tilting');
+  card.style.setProperty('--ry', `${(x - 0.5) * 10}deg`);
+  card.style.setProperty('--rx', `${(0.5 - y) * 10}deg`);
+  card.style.setProperty('--px', `${x * 100}%`);
+  card.style.setProperty('--py', `${y * 100}%`);
+}
+function untilt(event) {
+  const card = event.currentTarget;
+  card.classList.remove('tilting');
+  card.style.setProperty('--rx', '0deg');
+  card.style.setProperty('--ry', '0deg');
+}
+
+function productCard(p, i) {
   const loved = state.wishlist.has(p.id);
-  return el('article', { class: 'product' },
-    el('div', { class: `art tone-${p.tone}`, 'aria-hidden': 'true' }, p.icon),
+  const card = el('article', { class: state.animateCards ? 'product enter' : 'product', onPointerMove: tilt, onPointerLeave: untilt },
+    el('div', { class: `art tone-${p.tone}`, 'aria-hidden': 'true' }, el('span', { class: 'art-emoji' }, p.icon)),
     el('button', {
       type: 'button', class: loved ? 'heart heart-on' : 'heart', 'aria-pressed': String(loved),
       'aria-label': loved ? `Remove ${p.name} from wishlist` : `Add ${p.name} to wishlist`,
-      onClick: () => { if (loved) state.wishlist.delete(p.id); else state.wishlist.add(p.id); state.wishlistLink = null; renderWishlistTools(); renderProducts(); },
+      onClick: () => {
+        if (loved) state.wishlist.delete(p.id); else state.wishlist.add(p.id);
+        state.wishlistLink = null;
+        renderWishlistTools();
+        renderProducts();
+        toast(loved ? '♡' : '♥', loved ? `${p.name} removed from your wishlist` : `${p.name} saved to your wishlist`);
+      },
     }, loved ? '♥' : '♡'),
     el('div', { class: 'product-body' },
-      el('span', { class: 'muted small' }, p.cat),
+      el('span', { class: 'cat-pill' }, p.cat),
       el('h3', {}, p.name),
       el('p', { class: 'price' }, money(p.price), p.outOfStock && el('span', { class: 'oos' }, 'Out of stock')),
       reviews(p),
       sizeGuide(p),
       buyArea(p)));
+  card.style.setProperty('--i', String(i));
+  return card;
 }
 
 function renderProducts() {
   const list = visibleProducts();
   fill($('products'), ...(list.length
     ? list.map(productCard)
-    : [el('p', { class: 'muted empty' }, 'No products match your search.')]));
+    : [el('p', { class: 'muted empty' }, '🔍 No products match your search.')]));
+  state.animateCards = false; // the entrance plays once, not on every wishlist click
 }
 
 // A stable "personal" order for the ML recommendations: same shopper, same picks.
@@ -397,22 +512,22 @@ function miniCard(p) {
     el('span', {}, el('b', {}, p.name), el('br'), money(p.price)),
     el('button', {
       type: 'button', class: 'secondary small-button',
-      onClick: () => { state.basket.set(p.id, (state.basket.get(p.id) ?? 0) + 1); renderAll(); },
-    }, 'Add'));
+      onClick: (e) => addToBasket(p, e.currentTarget.closest('.mini')?.querySelector('.mini-art')),
+    }, 'Add +'));
 }
 
 function renderRecs() {
   const box = $('recs');
+  // classList, not className: the section also carries the scroll-reveal classes.
+  box.classList.toggle('recs-ml', on('recommendations-ml'));
   if (on('recommendations-ml')) {
-    box.className = 'card recs recs-ml';
-    fill(box, 
-      el('div', { class: 'section-head' }, el('h2', {}, `Recommended for ${shopper().name}`), tag('recommendations-ml')),
+    fill(box,
+      el('div', { class: 'section-head' }, el('h2', {}, `✨ Recommended for ${shopper().name}`), tag('recommendations-ml')),
       el('p', { class: 'muted small' }, 'Picked by the new recommendation model from your basket and browsing.'),
       el('div', { class: 'minis' }, ...personalPicks().map(miniCard)));
   } else {
-    box.className = 'card recs';
-    fill(box, 
-      el('h2', {}, 'Bestsellers'),
+    fill(box,
+      el('h2', {}, '🔥 Bestsellers'),
       el('div', { class: 'minis' }, ...['cable', 'hoodie', 'bottle'].map((id) => miniCard(byId[id]))));
   }
 }
@@ -451,9 +566,13 @@ function renderBasket() {
   if (t.bundle) sums.push(el('li', { class: 'ok' }, el('span', {}, 'Bundle discount (10%)', tag('bundle-discounts')), el('span', {}, `−${money(-t.bundle)}`)));
   if (t.gift) sums.push(el('li', {}, el('span', {}, 'Gift wrap'), el('span', {}, money(t.gift))));
   if (t.delivery) sums.push(el('li', {}, el('span', {}, 'Express delivery'), el('span', {}, money(t.delivery))));
-  sums.push(el('li', { class: 'total' }, el('span', {}, 'Total'), el('span', {}, money(t.total))));
+  // The total counts up to its new value; the node keeps its last value between renders.
+  const totalNode = el('span', { class: 'total-value' }, money(state.shownTotal ?? t.total));
+  totalNode.dataset.value = String(state.shownTotal ?? t.total);
+  sums.push(el('li', { class: 'total' }, el('span', {}, 'Total'), totalNode));
+  state.shownTotal = t.total;
 
-  fill($('basket'), 
+  fill($('basket'),
     el('h2', { id: 'basket-heading' }, 'Your basket'),
     state.placedOrder
       ? el('p', { class: 'ok' }, `✓ Order ${state.placedOrder} placed (demo only, no payment taken).`)
@@ -464,7 +583,8 @@ function renderBasket() {
     rows.length ? el('button', {
       type: 'button', class: 'primary wide',
       onClick: () => { state.checkoutOpen = true; state.step = 1; renderCheckout(); $('checkout').scrollIntoView({ behavior: 'smooth', block: 'start' }); },
-    }, 'Go to checkout') : null);
+    }, 'Go to checkout →') : null);
+  countTo(totalNode, t.total, money);
 }
 
 // ----- checkout parts (shared by the new one-page and the classic 3-step checkout) -----
@@ -538,6 +658,7 @@ function paymentPart() {
 
 function placeOrder() {
   state.placedOrder = `AC-${10000 + Math.floor(Math.random() * 90000)}`;
+  toast('🎉', `Order ${state.placedOrder} placed (demo only)`);
   state.basket.clear();
   state.checkoutOpen = false;
   state.giftWrap = false;
@@ -589,7 +710,7 @@ function renderAccount() {
   const reorder = on('one-click-reorder')
     ? el('span', {}, el('button', {
       type: 'button', class: 'secondary small-button',
-      onClick: () => { for (const id of lastOrder) state.basket.set(id, (state.basket.get(id) ?? 0) + 1); state.placedOrder = null; renderAll(); },
+      onClick: () => { for (const id of lastOrder) state.basket.set(id, (state.basket.get(id) ?? 0) + 1); state.placedOrder = null; renderAll(); toast('↻', 'Your last order is back in the basket'); },
     }, '↻ Reorder in one click'), tag('one-click-reorder'))
     : el('button', { type: 'button', class: 'secondary small-button', disabled: true }, 'View order');
 
@@ -704,6 +825,38 @@ document.addEventListener('DOMContentLoaded', () => {
   $('search').addEventListener('input', (e) => { state.search = e.target.value; renderProducts(); });
   $('search-form').addEventListener('submit', (e) => e.preventDefault());
 
+  startPageMotion();
   renderAll();
   loadFlags();
 });
+
+// Page-level motion: the header tightens on scroll, sections fade in as they appear, and the hero
+// art follows the pointer a little. Nothing here changes what the flags decide.
+function startPageMotion() {
+  const header = $('top');
+  const onScroll = () => header.classList.toggle('scrolled', window.scrollY > 8);
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  const sections = document.querySelectorAll('.reveal');
+  if ('IntersectionObserver' in window && !calm()) {
+    const seen = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) { entry.target.classList.add('is-in'); seen.unobserve(entry.target); }
+      }
+    }, { threshold: 0.08 });
+    sections.forEach((s) => seen.observe(s));
+  } else {
+    sections.forEach((s) => s.classList.add('is-in'));
+  }
+
+  const art = $('hero-art');
+  const hero = art.closest('.hero');
+  hero.addEventListener('pointermove', (e) => {
+    if (calm() || e.pointerType === 'touch') return;
+    const r = art.getBoundingClientRect();
+    art.style.setProperty('--mx', ((e.clientX - r.left) / r.width - 0.5).toFixed(3));
+    art.style.setProperty('--my', ((e.clientY - r.top) / r.height - 0.5).toFixed(3));
+  });
+  hero.addEventListener('pointerleave', () => { art.style.setProperty('--mx', '0'); art.style.setProperty('--my', '0'); });
+}
