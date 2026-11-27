@@ -72,6 +72,7 @@ node --env-file=.env -e "process.exit(process.env.DATABASE_URL_APP ? 0 : 1)" \
 awsl secretsmanager get-secret-value --secret-id ffm/api-secrets --query SecretString --output text \
   > "$TMP/shared.json" 2>/dev/null || echo '{}' > "$TMP/shared.json"
 ALERTS_QUEUE_URL=$(awsl sqs get-queue-url --queue-name ffm-alerts-queue --query QueueUrl --output text 2>/dev/null || true)
+ALERTS_DLQ_URL=$(awsl sqs get-queue-url --queue-name ffm-alerts-dlq --query QueueUrl --output text 2>/dev/null || true)
 echo "[0/6] done: Floci is up"
 
 echo "=== [1/6] Build the Lambda code (build/lambda.zip, one zip for all three) ==="
@@ -139,9 +140,15 @@ JSON
   echo "  role        ${role}"
 
   # Lambda: create it, or upload the new code and settings (= deploy)
-  # ALERTS_QUEUE_URL + METRICS_NAMESPACE: S3's alert outbox and CloudWatch metrics (s3-audit.sh).
-  # Kept when the queue exists, so a re-run of this script does not switch them off.
-  local env_vars="Variables={SECRET_ID=${secret},CORS_ORIGINS=${WEB_ORIGIN}${ALERTS_QUEUE_URL:+,ALERTS_QUEUE_URL=${ALERTS_QUEUE_URL},METRICS_NAMESPACE=FFM}}"
+  # ALERTS_QUEUE_URL + METRICS_NAMESPACE (+ ALERTS_DLQ_URL for the audit function only): S3's
+  # alert outbox, CloudWatch metrics and dead-letter card (s3-audit.sh). Kept when the queue
+  # exists, so a re-run of this script does not switch them off.
+  local s3_vars=""
+  if [ -n "$ALERTS_QUEUE_URL" ]; then
+    s3_vars=",ALERTS_QUEUE_URL=${ALERTS_QUEUE_URL},METRICS_NAMESPACE=FFM"
+    [ "$service" = audit ] && [ -n "$ALERTS_DLQ_URL" ] && s3_vars+=",ALERTS_DLQ_URL=${ALERTS_DLQ_URL}"
+  fi
+  local env_vars="Variables={SECRET_ID=${secret},CORS_ORIGINS=${WEB_ORIGIN}${s3_vars}}"
   if awsl lambda get-function --function-name "$fn" >/dev/null 2>&1; then
     awsl lambda update-function-code --function-name "$fn" --zip-file fileb://build/lambda.zip >/dev/null
     awsl lambda wait function-updated --function-name "$fn" 2>/dev/null || true

@@ -25,6 +25,7 @@ Account `000000000000` and region `us-east-1` are Floci's defaults.
 | | | `logs:CreateLogStream`, `logs:PutLogEvents` | `arn:aws:logs:us-east-1:000000000000:log-group:/aws/lambda/ffm-audit-fn:*` | Writes its own logs only. |
 | `ffm-flags-role`, `ffm-eval-role`, `ffm-audit-role` (policy `ffm-alerts-send`, from `s3-audit.sh`) | the three Lambdas, after COMMIT | `sqs:SendMessage` | `arn:aws:sqs:us-east-1:000000000000:ffm-alerts-queue` | Any of them can raise an alert (a prod toggle is in `ffm-flags-fn`), so each may put `{ alertId }` on the outbox. They cannot read, delete or purge messages, or reach any other queue. |
 | `ffm-flags-role`, `ffm-eval-role`, `ffm-audit-role` (policy `ffm-metrics-put`, from `s3-audit.sh`) | the three Lambdas, on a security event | `cloudwatch:PutMetricData` | `*` **with the condition** `cloudwatch:namespace = FFM` | Counts failed logins, 403s, failed bot checks and server errors for the alarm. AWS gives `PutMetricData` no resource ARN, so the namespace condition is the limit: no other namespace, and no reading, deleting or changing alarms. |
+| `ffm-audit-role` (policy `ffm-dlq-replay`, from `s3-audit.sh`) | Lambda `ffm-audit-fn` (the monitoring page's dead-letter card) | `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:ChangeMessageVisibility`, `sqs:GetQueueAttributes` | `arn:aws:sqs:us-east-1:000000000000:ffm-alerts-dlq` | Counts the team's dead letters and moves them back to the main queue (Replay). Only this function can: flags and eval have no DLQ rights, and the worker cannot touch the DLQ. |
 | `ffm-alert-worker-role` | Lambda `ffm-alert-worker` (S3: the outbox processor, triggered by SQS) | `secretsmanager:GetSecretValue` | `arn:aws:secretsmanager:us-east-1:000000000000:secret:ffm/worker-db-*` and `…:secret:ffm/github-token-*` | Its database login and the GitHub token. It is the **only** role that can read the token. |
 | | | `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:ChangeMessageVisibility`, `sqs:GetQueueAttributes` | `arn:aws:sqs:us-east-1:000000000000:ffm-alerts-queue` | What the SQS trigger needs to hand it messages and remove the ones it finished. No `SendMessage`, and no access to the DLQ. |
 | | | `logs:CreateLogStream`, `logs:PutLogEvents` | `arn:aws:logs:us-east-1:000000000000:log-group:/aws/lambda/ffm-alert-worker:*` | Writes its own logs only. |
@@ -33,7 +34,7 @@ Account `000000000000` and region `us-east-1` are Floci's defaults.
 | `ffm-ecs-task-role` | Our code while it runs in a Lab 8 task | **none** | — | The API only talks to Postgres, so it needs no AWS rights. If the code were taken over, it could not read secrets or touch any AWS service. |
 
 Policy names: `ffm-flags-fn-access`, `ffm-eval-fn-access`, `ffm-audit-fn-access`, `ffm-alerts-send`,
-`ffm-metrics-put`, `ffm-alert-worker-access` and `ffm-ecs-execution-policy`.
+`ffm-metrics-put`, `ffm-dlq-replay`, `ffm-alert-worker-access` and `ffm-ecs-execution-policy`.
 
 The `-*` at the end of a secret ARN is needed because AWS adds 6 random characters to every
 secret's ARN. It matches only that one secret's name, not any other secret.
@@ -56,7 +57,7 @@ functions cannot read it, so a bug in the flags or eval code cannot leak it. (On
 Sensitive environment variable, because Vercel runs everything in one function.)
 
 The alert queue has a resource policy too (`s3-audit.sh`): only the three web roles may send, and
-only the worker's role may receive or delete.
+only the worker's role may receive or delete. The DLQ's policy names only `ffm-audit-role`.
 
 ## What NO role can do
 

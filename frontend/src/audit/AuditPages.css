@@ -259,3 +259,14 @@
   padding: 1rem 1.25rem;
   border-top: 1px solid var(--line);
 }
+
+/* Alert queue card: the dead-letter count beside its Replay button */
+.audit-view .outbox-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .25rem 1rem;
+  padding-right: 1.25rem;
+}
+.audit-view .outbox-row .stat-tiles { flex: 0 1 16rem; background: none; }
+.audit-view .outbox-row .rule-actions { padding: .5rem 1.25rem; border-top: 0; }

@@ -6,6 +6,7 @@ const query = require('./query');
 const alerts = require('./alerts');
 const csv = require('./csv');
 const github = require('./github');
+const queue = require('./queue');
 const audit = require('../../shared/audit');
 
 async function listAudit(req, res) {
@@ -70,6 +71,17 @@ async function createGithubIssue(req, res) {
   if (!alert) throw Object.assign(new Error('No alert for that audit event.'), { status: 404, code: 'NOT_FOUND' });
   if (alert.status === 'sent') return res.status(200).json(github.toApi(alert));
 
+  // Floci: this function cannot read the GitHub token (only ffm-alert-worker can), so the retry
+  // goes through the outbox. 202: queued; the worker opens the issue in a few seconds.
+  if (queue.enabled()) {
+    await queue.enqueue(alert.id);
+    await audit.record(pool, req, {
+      action: 'alert.issue_requested', targetType: 'alert', targetId: alert.id,
+      details: { rule: alert.rule, status: 'queued' },
+    });
+    return res.status(202).json(github.toApi(alert));
+  }
+
   let sent;
   let failure;
   try {
@@ -87,7 +99,29 @@ async function createGithubIssue(req, res) {
   res.status(201).json(github.toApi(sent));
 }
 
+// The team's alerts in the dead-letter queue (failed 3 times in the worker). On Vercel there is
+// no queue: { enabled: false }.
+async function deadLetters(req, res) {
+  if (!queue.deadLettersEnabled()) return res.json({ enabled: false, deadLetters: 0, complete: true });
+  const { deadLetters: count, complete } = await queue.scanDeadLetters({
+    ownedBy: (ids) => github.alertIdsOfTeam(req.user.teamId, ids),
+  });
+  res.json({ enabled: true, deadLetters: count, complete });
+}
+
+// Puts the team's dead letters back on the main queue for another 3 tries. Audited as
+// alert.replayed with the number moved.
+async function replayDeadLetters(req, res) {
+  if (!queue.deadLettersEnabled()) throw conflict('This deployment sends alerts directly; there is no dead-letter queue.');
+  const { replayed, complete } = await queue.scanDeadLetters({
+    replay: true,
+    ownedBy: (ids) => github.alertIdsOfTeam(req.user.teamId, ids),
+  });
+  await audit.record(pool, req, { action: 'alert.replayed', targetType: 'alert', details: { count: replayed } });
+  res.json({ replayed, complete });
+}
+
 module.exports = {
   listAudit, auditSummary, exportAudit, monitoring, getAlertRules, putAlertRules,
-  listAlerts, createGithubIssue,
+  listAlerts, createGithubIssue, deadLetters, replayDeadLetters,
 };

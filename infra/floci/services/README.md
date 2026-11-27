@@ -71,7 +71,7 @@ ffm-flags-fn / ffm-eval-fn / ffm-audit-fn          (any of them can raise an ale
 SQS ffm-alerts-queue ──trigger, batch 1──► Lambda ffm-alert-worker ──► GitHub issue
    │ 3 failed tries                                 (reads ffm/worker-db + ffm/github-token)
    ▼
-SQS ffm-alerts-dlq  (kept 14 days; shown on the monitoring page)
+SQS ffm-alerts-dlq  (kept 14 days) ◄──count / Replay── ffm-audit-fn (monitoring page, Admin)
 
 shared/metrics.js (in all three functions, METRICS_NAMESPACE=FFM)
    │ PutMetricData on every security event
@@ -96,6 +96,12 @@ SNS ffm-ops-alerts ──► ffm-ops-inbox (SQS subscriber, to show delivery)
   server error is counted even when the database is down. CloudWatch being down costs a request
   at most about 0.5 s and is only logged (`metrics: not sent`). With `METRICS_NAMESPACE` unset
   (Vercel) nothing is sent.
+- **Dead letters on the monitoring page:** the "Alert queue" card shows how many of the team's
+  alerts are in the DLQ, and **Replay** (Admin, CSRF, audited as `alert.replayed`) puts them back on
+  the main queue for 3 more tries. The DLQ is shared, so the audit function reads it in batches,
+  keeps only the team's alert ids (checked in the database) and releases the others untouched.
+  Only `ffm-audit-fn` has `ALERTS_DLQ_URL` and the DLQ rights. Retry on a single alert is also
+  queued on Floci (`202`), because only the worker can read the GitHub token.
 - `rate_limit.hit` has no metric here: `FFM/RateLimitHits` is S2's (Habiba's) bonus item.
 - `s2-lambdas.sh` keeps `ALERTS_QUEUE_URL` and `METRICS_NAMESPACE` when it redeploys, and
   `s3-audit.sh` adds the permissions as their own policies (`ffm-alerts-send`, `ffm-metrics-put`),
@@ -115,4 +121,5 @@ Checked on 27 Nov 2026 (Floci 2.5.0): the SQS trigger runs the worker; a failing
 subscribed queue. All of these actually run on Floci, not only recorded. Live test: 6 wrong
 passwords → `FFM/FailedLogins` = 6 → alarm OK → ALARM within a minute → SNS message
 "ALARM: ffm-failed-logins" in `ffm-ops-inbox`; two Developer requests to `/monitoring` →
-`FFM/Forbidden` = 2.
+`FFM/Forbidden` = 2. Dead letters: Acme's Admin saw 1, Globex's Admin saw 0 and their Replay moved
+nothing; Acme's Replay moved 1 (DLQ 1 → 0, worker picked it up), audited `alert.replayed {"count":1}`.
