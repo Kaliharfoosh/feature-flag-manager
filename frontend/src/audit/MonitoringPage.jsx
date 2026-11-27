@@ -75,6 +75,55 @@ const loadRules = (_, signal) => api.getAlertRules(signal)
 const loadDeadLetters = (_, signal) => api.getDeadLetters(signal)
 const loadMonitoring = (key, signal) => api.getMonitoring(Number(key.split(':')[0]), signal)
 
+// The Vercel Firewall rules that run BEFORE the app (vercel.com → project → Firewall). Requests they
+// block never reach the API, so they cannot be counted here; their hits are in Vercel's Firewall view.
+const EDGE_RULES = [
+  ['FW1', 'Login rate limit', '20 POST /api/v1/auth/login per minute per IP → 429'],
+  ['FW2', 'Evaluation traffic', 'requests to /api/v1/evaluations are logged at the edge'],
+  ['FW3', 'Scanner paths', '/.env, /.git, /wp-admin, /wp-login.php, /phpmyadmin, /xmlrpc.php → 403'],
+]
+
+// One live probe when the page opens: ask our own origin for /.env, a path FW3 must deny at the
+// edge. "X-Vercel-Mitigated: deny" proves the firewall answered, not our code. Same origin, so the
+// CSP (connect-src 'self') allows it and every response header is readable.
+async function probeEdge(signal) {
+  const response = await fetch(`${window.location.origin}/.env`, { cache: 'no-store', credentials: 'omit', signal })
+  const mitigated = response.headers.get('x-vercel-mitigated')
+  if (mitigated) return { state: 'active', detail: `/.env → ${response.status}, x-vercel-mitigated: ${mitigated}` }
+  if (response.headers.get('server') === 'Vercel') return { state: 'missing', detail: `/.env → ${response.status} with no firewall header` }
+  return { state: 'local', detail: `/.env → ${response.status} (not served by Vercel, so no edge firewall here)` }
+}
+
+function EdgeFirewall() {
+  const [probe, setProbe] = useState(null)
+  useEffect(() => {
+    const controller = new AbortController()
+    probeEdge(controller.signal).then(setProbe).catch((error) => {
+      if (error.name !== 'AbortError') setProbe({ state: 'unknown', detail: 'The probe could not run.' })
+    })
+    return () => controller.abort()
+  }, [])
+  const label = { active: 'Edge firewall active', missing: 'Edge firewall NOT answering', local: 'No edge firewall on this deployment', unknown: 'Edge firewall unknown' }
+  return (
+    <section className="flags-card" aria-labelledby="edge-heading">
+      <div className="flags-toolbar">
+        <h2 id="edge-heading" className="audit-heading">Blocked at the edge</h2>
+        <p className="audit-hint">These requests are stopped by the Vercel Firewall before they reach the app, so the numbers above never include them. Their hits are in Vercel → project → Firewall.</p>
+      </div>
+      <div className={`edge-probe edge-${probe?.state ?? 'checking'}`} role="status">
+        <span className="edge-dot" aria-hidden="true" />
+        <b>{probe ? label[probe.state] : 'Checking the edge firewall…'}</b>
+        {probe && <code>{probe.detail}</code>}
+      </div>
+      <ul className="edge-rules">
+        {EDGE_RULES.map(([id, name, what]) => (
+          <li key={id}><span className="edge-id">{id}</span><span><b>{name}</b><span className="audit-meta">{what}</span></span></li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 // One-hue horizontal bars, largest first, each value written on its bar (no legend needed).
 function BarList({ title, rows, empty, mono = false }) {
   const max = Math.max(1, ...rows.map((r) => r.value))
@@ -469,6 +518,7 @@ function MonitoringDashboard({ session }) {
         )}
       </section>
 
+      <EdgeFirewall />
       <DeadLetters csrfToken={session.csrfToken} refreshKey="dead-letters" onReplayed={() => setRefresh((n) => n + 1)} />
       <AlertList csrfToken={session.csrfToken} refreshKey={`alerts-${refresh}`} />
       <AlertRules csrfToken={session.csrfToken} />

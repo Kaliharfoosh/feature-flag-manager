@@ -369,3 +369,26 @@
 .unattributed-title { color: var(--text); font: 700 .72rem var(--font-mono); text-transform: uppercase; letter-spacing: .1em; }
 .unattributed b { margin-left: .25rem; color: var(--amber); font: 700 .85rem var(--font-mono); }
 .unattributed-note { flex-basis: 100%; color: var(--text-3); font-size: .72rem; }
+
+/* ---- blocked at the edge (Vercel Firewall) ---- */
+.edge-probe {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .7rem;
+  padding: .75rem 1.15rem;
+  border-bottom: 1px solid var(--line);
+  border-left: 3px solid var(--off);
+  font-size: .85rem;
+}
+.edge-probe code { font-size: .76rem; }
+.edge-dot { width: .55rem; height: .55rem; border-radius: 50%; background: var(--off); }
+.edge-active { border-left-color: var(--accent); }
+.edge-active .edge-dot { background: var(--accent); animation: pulse-dot 2.2s infinite; }
+.edge-active b { color: var(--accent); }
+.edge-missing { border-left-color: var(--danger); }
+.edge-missing .edge-dot { background: var(--danger); }
+.edge-missing b { color: var(--danger); }
+.edge-local b, .edge-unknown b, .edge-checking b { color: var(--text-2); }
+.edge-rules { margin: 0; padding: .4rem 0; list-style: none; }
+.edge-rules li { display: flex; gap: .85rem; align-items: baseline; padding: .55rem 1.15rem; }
+.edge-rules li + li { border-top: 1px solid var(--line); }
+.edge-rules b { font-size: .88rem; }
+.edge-id { flex: 0 0 auto; padding: .05rem .45rem; border: 1px solid var(--line-strong); border-radius: .35rem; color: var(--cyan); font: 700 .72rem var(--font-mono); }
