@@ -1,4 +1,5 @@
 const service = require('./service');
+const events = require('../../shared/events');
 const { parseCreate, parseId, parseQuery } = require('./schema');
 const { deliverPending } = require('../audit-alerts/github');
 
@@ -9,12 +10,14 @@ async function list(req, res) {
 
 async function create(req, res) {
   const key = await service.createKey(req, parseCreate(req.body));
+  await events.publish(req, { action: 'key.created', targetId: key.id, env: key.env, prefix: key.prefix });
   await deliverPending(req);
   res.status(201).json(key);
 }
 
 async function revoke(req, res) {
-  await service.revokeKey(req, parseId(req.params.id));
+  const key = await service.revokeKey(req, parseId(req.params.id));
+  if (key) await events.publish(req, { action: 'key.revoked', targetId: key.id, env: key.env, prefix: key.prefix });
   await deliverPending(req);
   res.status(204).end();
 }

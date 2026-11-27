@@ -1,0 +1,23 @@
+.flag-detail-tabs { display: flex; gap: .5rem; margin: 1.1rem 0; border-bottom: 1px solid var(--line); padding-bottom: .75rem; }
+.flag-detail-tabs button[aria-selected='true'] { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.flag-history { margin-top: 1rem; }
+.history-heading { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
+.history-heading h3 { margin: 0; }
+.history-heading p, .flag-history p { color: var(--text-2); font-size: .85rem; }
+.history-empty { padding: 1.25rem; background: var(--surface-2); border: 1px dashed var(--line-strong); border-radius: var(--radius-sm); }
+.history-list { list-style: none; padding: 0; display: grid; gap: .85rem; }
+.history-list > li { padding: 1rem; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); animation: rise .3s var(--ease); }
+.history-version { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; }
+.history-version > span { font: .75rem var(--font-mono); padding: .2rem .45rem; border-radius: .3rem; color: var(--cyan); background: var(--cyan-soft); }
+.history-version time { margin-left: auto; color: var(--text-3); font: .7rem var(--font-mono); }
+.history-list .history-name { color: var(--text); }
+.history-environments { display: flex; flex-wrap: wrap; gap: .45rem; margin: .8rem 0; }
+.history-environments span { color: var(--text-2); font: .7rem var(--font-mono); border: 1px solid var(--line-strong); padding: .3rem .45rem; border-radius: .3rem; }
+.history-confirm { position: sticky; bottom: 0; padding: 1.1rem; background: var(--surface-2); border: 1px solid var(--amber); border-radius: var(--radius-sm); box-shadow: var(--shadow); }
+.history-confirm h3 { color: var(--amber); margin: 0; }
+.history-eyebrow { margin: 0 0 .35rem; font: .7rem var(--font-mono); color: var(--accent); text-transform: uppercase; letter-spacing: .1em; }
+.recovery-list { list-style: none; display: grid; gap: .75rem; padding: 0; }
+.recovery-list li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); }
+.recovery-list code { display: block; margin-top: .5rem; }
+.recovery-dialog > .flag-button { margin-block: .75rem; }
+@media (max-width: 560px) { .history-heading { flex-wrap: wrap; } .history-version time { margin-left: 0; flex-basis: 100%; } .recovery-list li { align-items: start; flex-direction: column; } }

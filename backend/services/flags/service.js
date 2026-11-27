@@ -2,6 +2,7 @@ const { pool } = require('../../db/pool');
 const { encodeCursor } = require('./schema');
 const { createDefaults } = require('../keys-evaluation/rollouts');
 const audit = require('../../shared/audit');
+const cloud = require('./cloud');
 
 const flagDetailsSql = `SELECT f.id, f.key, f.name, f.description, f.archived_at IS NOT NULL AS archived,
        f.version, f.created_by AS "createdBy", f.created_at AS "createdAt", f.updated_at AS "updatedAt",
@@ -70,6 +71,7 @@ async function createFlag(req, input) {
         targetId: flag.id,
         after: { key: flag.key, name: flag.name, description: flag.description, archived: false, version: flag.version },
       });
+      await cloud.stage(req, client, { flag: { ...flag, environments }, action: 'flag.created' });
       return { ...flag, environments };
     });
   } catch (error) {
@@ -134,6 +136,7 @@ async function toggleEnvironment(req, { flagId, env, enabled, version }) {
       details: { key: flag.key, env },
       before: { enabled: before.enabled }, after: { enabled: after.enabled },
     });
+    await cloud.stage(req, client, { flag: cloud.snapshotsEnabled() ? await readFlag(client, req.user.teamId, flagId) : { id: flagId }, action: 'flag.toggled', env });
     return { flagId, env, ...after };
   });
 }
@@ -180,6 +183,7 @@ async function updateFlag(req, flagId, input) {
       action, targetType: 'flag', targetId: flagId,
       before: flagSnapshot(before), after: flagSnapshot(after),
     });
+    await cloud.stage(req, client, { flag: after, action, env: before.archived !== after.archived ? 'prod' : 'all' });
     return after;
   });
 }
@@ -193,6 +197,8 @@ async function deleteFlag(req, flagId) {
     if (!flag.archived) {
       throw Object.assign(new Error('Archive this flag before deleting it.'), { status: 409, code: 'CONFLICT' });
     }
+    const snapshot = cloud.snapshotsEnabled() ? await readFlag(client, req.user.teamId, flagId) : flag;
+    await cloud.stage(req, client, { flag: snapshot, action: 'flag.deleted', env: 'prod' });
     await client.query('DELETE FROM flags WHERE id = $1 AND team_id = $2', [flagId, req.user.teamId]);
     await audit.record(client, req, {
       action: 'flag.deleted', targetType: 'flag', targetId: flagId,
@@ -201,4 +207,4 @@ async function deleteFlag(req, flagId) {
   });
 }
 
-module.exports = { listFlags, createFlag, getFlag, toggleEnvironment, updateFlag, deleteFlag };
+module.exports = { inTransaction, readFlag, listFlags, createFlag, getFlag, toggleEnvironment, updateFlag, deleteFlag };

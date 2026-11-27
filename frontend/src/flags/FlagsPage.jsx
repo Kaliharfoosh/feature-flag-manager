@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import './FlagsPage.css'
 import CreateFlagDialog from './CreateFlagDialog.jsx'
+import { FlagHistory, RecoveryDialog } from './FlagHistory.jsx'
 import { fetchFlags, getFlag, toggleEnvironment, updateFlag, deleteFlag } from './api'
 
 const environments = [
@@ -29,6 +30,7 @@ function RolloutChart({ flag, role, csrfToken, onUpdated, onDeleted, onClose }) 
   const [editor, setEditor] = useState(null)
   const [deleting, setDeleting] = useState(false)
   const [deleteKey, setDeleteKey] = useState('')
+  const [view, setView] = useState('overview')
 
 
   function beginEdit() {
@@ -139,6 +141,15 @@ function RolloutChart({ flag, role, csrfToken, onUpdated, onDeleted, onClose }) 
         <button type="button" className="flag-button" disabled={pending} onClick={() => dialog.current.close()}>Close</button>
       </header>
 
+      <div className="flag-detail-tabs" role="tablist" aria-label="Flag details">
+        <button type="button" role="tab" className="flag-button" aria-selected={view === 'overview'} aria-controls="flag-overview" id="flag-overview-tab" disabled={pending} onClick={() => setView('overview')}>Overview</button>
+        <button type="button" role="tab" className="flag-button" aria-selected={view === 'history'} aria-controls="flag-history" id="flag-history-tab" disabled={pending || editor !== null || deleting} onClick={() => setView('history')}>History</button>
+      </div>
+      {view === 'history' ? <div role="tabpanel" id="flag-history" aria-labelledby="flag-history-tab">
+        <FlagHistory flagId={flag.id} version={flag.version} role={role} csrfToken={csrfToken}
+          onBusy={(busy) => { saving.current = busy; setPending(busy) }}
+          onRestored={(updated) => { onUpdated(updated); setView('overview'); setNotice('Flag version restored.'); setNeedsReload(false); setError('') }} />
+      </div> : <div role="tabpanel" id="flag-overview" aria-labelledby="flag-overview-tab">
       {flag.archived && <p className="archived-notice">Archived flags evaluate Off in every environment.</p>}
       {editor ? (
         <form className="flag-edit-form" onSubmit={(event) => {
@@ -226,12 +237,14 @@ function RolloutChart({ flag, role, csrfToken, onUpdated, onDeleted, onClose }) 
       {needsReload && <button type="button" className="flag-button" disabled={pending} onClick={reloadDetails}>Reload details</button>}
       {/* S2: opens the rollout page (percentages, allow/block lists, preview) */}
       {!pending && !editor && !deleting && <Link className="rollout-manage" to={`/flags/${flag.id}/rollout`} state={{ flag }}>Manage rollout →</Link>}
+      </div>}
     </dialog>
   )
 }
 
 export default function FlagsPage({ csrfToken, role }) {
   const [creating, setCreating] = useState(false)
+  const [recovering, setRecovering] = useState(false)
   const [createdMessage, setCreatedMessage] = useState('')
   const [search, setSearch] = useState('')
   const [selectedFlag, setSelectedFlag] = useState(null)
@@ -309,6 +322,7 @@ export default function FlagsPage({ csrfToken, role }) {
             <button type="button" aria-pressed={filters.archived} onClick={() => showArchived(true)}>Archived</button>
           </div>
           <div className="flag-search" role="search">
+            {role === 'admin' && <button type="button" className="flag-button" onClick={() => setRecovering(true)}>Recover deleted flag</button>}
             <input
               type="search"
               aria-label="Search flags by name or key"
@@ -392,6 +406,7 @@ export default function FlagsPage({ csrfToken, role }) {
           </div>
         )}
       </div>
+      {recovering && <RecoveryDialog csrfToken={csrfToken} onClose={() => setRecovering(false)} onRestored={(flag) => { setRecovering(false); setCreatedMessage('Flag recovered as archived. Review its settings before unarchiving.'); setFilters({ q: '', archived: true, cursors: [null] }); setSearch(''); setSelectedFlag(flag) }} />}
       {creating && <CreateFlagDialog csrfToken={csrfToken} onCreated={handleCreated} onClose={() => setCreating(false)} />}
       {selectedFlag && <RolloutChart flag={selectedFlag} role={role} csrfToken={csrfToken} onUpdated={handleUpdated} onDeleted={handleDeleted} onClose={() => setSelectedFlag(null)} />}
     </section>

@@ -54,13 +54,14 @@ async function revokeKey(req, id) {
     );
     if (!key) throw Object.assign(new Error('API key not found.'), { status: 404, code: 'NOT_FOUND' });
     // Repeated requests are safe and do not create duplicate audit records or alerts.
-    if (key.revokedAt) return;
+    if (key.revokedAt) return null;
     await client.query('UPDATE api_keys SET revoked_at = now() WHERE id = $1 AND team_id = $2', [id, req.user.teamId]);
     await audit.record(client, req, {
       action: 'key.revoked', targetType: 'api_key', targetId: id,
       before: { name: key.name, env: key.env, prefix: key.prefix, revoked: false },
       after: { name: key.name, env: key.env, prefix: key.prefix, revoked: true },
     });
+    return { id: key.id, prefix: key.prefix, env: key.env };
   });
 }
 
