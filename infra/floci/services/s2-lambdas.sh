@@ -139,9 +139,9 @@ JSON
   echo "  role        ${role}"
 
   # Lambda: create it, or upload the new code and settings (= deploy)
-  # ALERTS_QUEUE_URL: S3's alert outbox (s3-audit.sh). Kept when the queue exists, so a re-run
-  # of this script does not switch the functions back to sending GitHub issues inline.
-  local env_vars="Variables={SECRET_ID=${secret},CORS_ORIGINS=${WEB_ORIGIN}${ALERTS_QUEUE_URL:+,ALERTS_QUEUE_URL=${ALERTS_QUEUE_URL}}}"
+  # ALERTS_QUEUE_URL + METRICS_NAMESPACE: S3's alert outbox and CloudWatch metrics (s3-audit.sh).
+  # Kept when the queue exists, so a re-run of this script does not switch them off.
+  local env_vars="Variables={SECRET_ID=${secret},CORS_ORIGINS=${WEB_ORIGIN}${ALERTS_QUEUE_URL:+,ALERTS_QUEUE_URL=${ALERTS_QUEUE_URL},METRICS_NAMESPACE=FFM}}"
   if awsl lambda get-function --function-name "$fn" >/dev/null 2>&1; then
     awsl lambda update-function-code --function-name "$fn" --zip-file fileb://build/lambda.zip >/dev/null
     awsl lambda wait function-updated --function-name "$fn" 2>/dev/null || true

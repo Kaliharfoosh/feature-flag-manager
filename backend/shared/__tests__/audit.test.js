@@ -137,3 +137,32 @@ describe('recordSecurity', () => {
     await expect(audit.recordSecurity(reqAs(), 'oops', {}, { db: fakeTx() })).rejects.toThrow(TypeError);
   });
 });
+
+describe('CloudWatch metrics (shared/metrics.js)', () => {
+  const metrics = require('../metrics');
+  let count;
+  beforeEach(() => { count = jest.spyOn(metrics, 'count').mockResolvedValue(null); });
+  afterEach(() => count.mockRestore());
+
+  test('a security event written in a transaction (login.failed) is counted after its row is saved', async () => {
+    await audit.record(fakeTx(), reqAs(), { category: 'security', action: 'login.failed', details: { rateLimited: false } });
+    expect(count).toHaveBeenCalledWith('login.failed', expect.anything());
+  });
+
+  test('a change event is not counted', async () => {
+    await audit.record(fakeTx(), reqAs({ user }), { action: 'flag.created' });
+    expect(count).not.toHaveBeenCalled();
+  });
+
+  test('a failed insert is not counted (the login transaction rolls back)', async () => {
+    const tx = { query: jest.fn(async () => { throw new Error('permission denied'); }) };
+    await expect(audit.record(tx, reqAs(), { category: 'security', action: 'login.failed' })).rejects.toThrow();
+    expect(count).not.toHaveBeenCalled();
+  });
+
+  test('recordSecurity counts even when the database is down', async () => {
+    const db = { query: jest.fn(async () => { throw new Error('db down'); }) };
+    await audit.recordSecurity(reqAs({ log: { error: jest.fn() } }), 'access.denied', {}, { db });
+    expect(count).toHaveBeenCalledWith('access.denied', expect.anything());
+  });
+});

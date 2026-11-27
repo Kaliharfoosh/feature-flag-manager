@@ -27,6 +27,7 @@
   },
   "homepage": "https://github.com/Kaliharfoosh/feature-flag-manager#readme",
   "dependencies": {
+    "@aws-sdk/client-cloudwatch": "^3.1169.0",
     "@aws-sdk/client-secrets-manager": "^3.1169.0",
     "@aws-sdk/client-sqs": "^3.1169.0",
     "bcryptjs": "^3.0.3",

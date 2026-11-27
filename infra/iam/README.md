@@ -24,6 +24,7 @@ Account `000000000000` and region `us-east-1` are Floci's defaults.
 | `ffm-audit-role` | Lambda `ffm-audit-fn` (S3: audit, alerts, monitoring) | `secretsmanager:GetSecretValue` | `arn:aws:secretsmanager:us-east-1:000000000000:secret:ffm/audit-db-*` | Same as above, for its own secret only. |
 | | | `logs:CreateLogStream`, `logs:PutLogEvents` | `arn:aws:logs:us-east-1:000000000000:log-group:/aws/lambda/ffm-audit-fn:*` | Writes its own logs only. |
 | `ffm-flags-role`, `ffm-eval-role`, `ffm-audit-role` (policy `ffm-alerts-send`, from `s3-audit.sh`) | the three Lambdas, after COMMIT | `sqs:SendMessage` | `arn:aws:sqs:us-east-1:000000000000:ffm-alerts-queue` | Any of them can raise an alert (a prod toggle is in `ffm-flags-fn`), so each may put `{ alertId }` on the outbox. They cannot read, delete or purge messages, or reach any other queue. |
+| `ffm-flags-role`, `ffm-eval-role`, `ffm-audit-role` (policy `ffm-metrics-put`, from `s3-audit.sh`) | the three Lambdas, on a security event | `cloudwatch:PutMetricData` | `*` **with the condition** `cloudwatch:namespace = FFM` | Counts failed logins, 403s, failed bot checks and server errors for the alarm. AWS gives `PutMetricData` no resource ARN, so the namespace condition is the limit: no other namespace, and no reading, deleting or changing alarms. |
 | `ffm-alert-worker-role` | Lambda `ffm-alert-worker` (S3: the outbox processor, triggered by SQS) | `secretsmanager:GetSecretValue` | `arn:aws:secretsmanager:us-east-1:000000000000:secret:ffm/worker-db-*` and `…:secret:ffm/github-token-*` | Its database login and the GitHub token. It is the **only** role that can read the token. |
 | | | `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:ChangeMessageVisibility`, `sqs:GetQueueAttributes` | `arn:aws:sqs:us-east-1:000000000000:ffm-alerts-queue` | What the SQS trigger needs to hand it messages and remove the ones it finished. No `SendMessage`, and no access to the DLQ. |
 | | | `logs:CreateLogStream`, `logs:PutLogEvents` | `arn:aws:logs:us-east-1:000000000000:log-group:/aws/lambda/ffm-alert-worker:*` | Writes its own logs only. |
@@ -32,7 +33,7 @@ Account `000000000000` and region `us-east-1` are Floci's defaults.
 | `ffm-ecs-task-role` | Our code while it runs in a Lab 8 task | **none** | — | The API only talks to Postgres, so it needs no AWS rights. If the code were taken over, it could not read secrets or touch any AWS service. |
 
 Policy names: `ffm-flags-fn-access`, `ffm-eval-fn-access`, `ffm-audit-fn-access`, `ffm-alerts-send`,
-`ffm-alert-worker-access` and `ffm-ecs-execution-policy`.
+`ffm-metrics-put`, `ffm-alert-worker-access` and `ffm-ecs-execution-policy`.
 
 The `-*` at the end of a secret ARN is needed because AWS adds 6 random characters to every
 secret's ARN. It matches only that one secret's name, not any other secret.
@@ -62,7 +63,8 @@ only the worker's role may receive or delete.
 - read any secret except its own one
 - delete or change anything: no `Delete*`, no `Put*` on secrets, no IAM changes
 - use any AWS service not listed in its row (S3, KMS, ...); only the alert queue is shared, as above
-- use `*` as an action or as a resource
+- use `*` as an action, or `*` as a resource without a condition (the one `*`, for `PutMetricData`, is
+  limited to the `FFM` namespace)
 
 **Why not one broad admin role?** One bug or one leaked key in any function could then read every
 secret, delete the logs that would show the attack, and change IAM to keep access. With one small
