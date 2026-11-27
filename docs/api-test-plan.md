@@ -168,6 +168,10 @@ Same IDs as the build plan. Record a screenshot or request id for each row in `e
 | ST-12 | Developer exports audit | Developer: `GET /audit/export.csv` | 403 | S3 | | |
 | ST-13 | Secret exposure review | gitleaks on the full history · search `frontend/dist` for secrets · read logs for tokens and passwords | Nothing found; logs show `[REDACTED]` | All | | |
 | ST-14 | Browser security headers | `curl -I https://feature-flag-manager-cyan.vercel.app` and run `document.body.append(Object.assign(document.createElement('script'), { textContent: 'alert(1)' }))` in the Console | CSP, nosniff, DENY, Referrer-Policy, Permissions-Policy, COOP present; "Refused to execute inline script" | S2 | | |
+| ST-15 | Login without a bot-check token | `POST /auth/login` with no Turnstile token | 403 `BOT_CHECK_FAILED` before the password is checked; counted as a bot-check failure on the monitoring card | S1 | | |
+| ST-17 | CSV formula injection | A flag named `=HYPERLINK(...)`, then `GET /audit/export.csv` as Admin | No cell starts with `=`, `+`, `-` or `@` | S3 | | |
+| ST-18 | Edge login limit (Vercel Firewall FW1) | 25 quick `POST /auth/login` with an empty body `{}` (no failed-login rows, no alert) | First 20 get 400 from the app, then 429 from the edge with `x-vercel-mitigated: deny` | S1 | | |
+| ST-19 | Scanner paths blocked at the edge (FW3) | `curl -i …/.env`, `/.git/config`, `/wp-admin`, `/wp-login.php`, `/phpmyadmin`, `/xmlrpc.php` | 403 for all six; a normal path such as `/envelope` still 200 | S3 | | |
 
 ## Persistence and recovery (S2)
 

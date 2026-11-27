@@ -82,9 +82,9 @@ awsl secretsmanager get-resource-policy --secret-id ffm/eval-db --query Resource
 awsl iam list-role-policies --role-name ffm-ecs-task-role     # empty on purpose
 ```
 
-None of these print a secret value. Checked on 27 Nov 2026: Floci lists exactly these 5 roles,
-and the policies it returns match the table above. (`ffm-alert-worker-role` was added the same
-day by `s3-audit.sh`.)
+None of these print a secret value. Checked on 27 Nov 2026: Floci lists the three Lambda roles
+and the two Lab 8 roles, and the policies it returns match the table above.
+`ffm-alert-worker-role` appears once `s3-audit.sh` has run on that Floci.
 
 ## Database side
 
@@ -112,6 +112,6 @@ is why the database denials are shown live.
 
 ## Teammates: adding permissions
 
-When S1 (S3 snapshots, KMS, EventBridge) or S3 (SQS, SNS, CloudWatch) give their function a new
-AWS right, add it to that role's policy in the script **and** add a row to the table above with
-the exact ARN. Never use `"Resource": "*"`.
+When S1 (S3 snapshots, KMS, EventBridge) or S3 gives a function a new AWS right, add it to that
+role's policy in the script **and** add a row to the table above with the exact ARN, as
+`s3-audit.sh` did for SQS, CloudWatch and the DLQ. Never use `"Resource": "*"` without a condition.

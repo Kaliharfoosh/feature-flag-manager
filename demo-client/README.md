@@ -61,8 +61,8 @@ Any other id can be typed in the demo bar.
 
 1. Create a staging key (from the repo root): `npm run seed:key`, and copy the key.
 2. In `demo-client/`, copy `.env.example` to `.env` and paste the key into `FFM_API_KEY`.
-   For the batch endpoint, `FFM_API_URL` must point at a Feature Flag Manager that has it
-   (`http://localhost:3000` with `npm run dev:api`, or the live URL once it is deployed).
+   Set `FFM_API_URL` to `http://localhost:3000` (with `npm run dev:api`) or to the live URL
+   `https://feature-flag-manager-cyan.vercel.app`.
 3. `cd demo-client` then `npm start`, and open http://localhost:4000
 
 ## Deploy it (a second, separate Vercel project)

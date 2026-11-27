@@ -1,16 +1,18 @@
-# React + Vite
+# frontend/
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+The Feature Flag Manager web app: React + Vite, built to `frontend/dist` and served by Vercel
+(or by the S3 website `ffm-web` on Floci).
 
-Currently, two official plugins are available:
+| Folder | Pages | Owner |
+|---|---|---|
+| `src/auth/` | sign-in with the Turnstile widget | S1 Youssef |
+| `src/flags/` | flags list, search, create, edit, archive, toggle per environment | S1 Youssef |
+| `src/rollouts/` | rollout page: percentages, allow/block lists, preview | S2 Habiba |
+| `src/audit/` | audit log, CSV export, monitoring page, alerts | S3 Ebrahim |
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+`src/apiBase.js` decides where API calls go: the same origin by default, or `VITE_API_BASE` when
+the site is served from S3 on Floci.
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+Run it with `npm run dev:web` from the repo root (port 5173, `/api` is proxied to the API on
+port 3000). Security headers (CSP, HSTS and the rest) are set in the root `vercel.json`, not here.
+Every permission the UI hides is checked again by the backend.
