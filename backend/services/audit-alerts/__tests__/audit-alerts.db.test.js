@@ -105,8 +105,27 @@ describeDb('alerts and audit queries against Postgres', () => {
     const m = await query.monitoring(teamId, 24, client);
     expect(m).toMatchObject({ hours: 24, failedLogins: 4, forbidden: 1, serverErrors: 0, rateLimited: 1, alertFailures: 0 });
     expect(m.topFailedLoginIps).toEqual([{ ip: '203.0.113.9', count: 3 }, { ip: '198.51.100.4', count: 1 }]);
+    expect(m.bucketMinutes).toBe(60);
     expect(m.series).toHaveLength(24);
     expect(m.series[23]).toMatchObject({ failedLogins: 4, forbidden: 1 });
+  });
+
+  test('monitoring: refused endpoints, and 5-minute buckets in the 1-hour window', async () => {
+    const dev = req('dev@it.test', teamId);
+    for (let i = 0; i < 3; i += 1) await audit.recordSecurity(dev, 'access.denied', { method: 'GET', path: '/api/v1/monitoring' }, { db: client });
+    await audit.recordSecurity(dev, 'access.denied', { method: 'GET', path: '/api/v1/audit/export.csv' }, { db: client });
+    await audit.recordSecurity(req('x@other.test', otherTeamId), 'access.denied', { method: 'GET', path: '/api/v1/secret' }, { db: client });
+
+    const m = await query.monitoring(teamId, 1, client);
+    expect(m.topRefusedEndpoints).toEqual([
+      { endpoint: 'GET /api/v1/monitoring', count: 3 },
+      { endpoint: 'GET /api/v1/audit/export.csv', count: 1 },
+    ]); // the other team's refusal is not visible here
+    expect(m.bucketMinutes).toBe(5);
+    expect(m.series).toHaveLength(12);
+    expect(m.series[11].forbidden).toBe(4);
+    const step = new Date(m.series[1].hour) - new Date(m.series[0].hour);
+    expect(step).toBe(5 * 60 * 1000);
   });
 
   test('updating alert rules saves them and writes alert_rules.updated', async () => {

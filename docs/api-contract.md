@@ -414,12 +414,15 @@ An audit event as returned by the API:
 - `200 OK`:
 
 ```json
-{ "hours": 24,
+{ "hours": 24, "bucketMinutes": 60,
   "failedLogins": 12, "botCheckFailures": 0, "forbidden": 3, "serverErrors": 0, "rateLimited": 2, "alertFailures": 1,
   "topFailedLoginIps": [ { "ip": "203.0.113.9", "count": 11 } ],
+  "topRefusedEndpoints": [ { "endpoint": "GET /api/v1/audit/export.csv", "count": 3 } ],
   "series": [ { "hour": "2026-11-13T13:00:00.000Z", "failedLogins": 11, "forbidden": 1, "serverErrors": 0 } ] }
 ```
 
+- `series` has one point per bucket, empty ones included: hourly (`bucketMinutes: 60`, 24 or 168 points), except `hours=1`, which uses 5-minute buckets (`bucketMinutes: 5`, 12 points) so a burst of attacks shows its shape. `hour` is the bucket's start.
+- `topRefusedEndpoints`: the six method + path pairs most often refused with 403 (`access.denied`), this team only.
 - Errors: `400`, `401`, `403`.
 
 ### GET /alert-rules and PUT /alert-rules

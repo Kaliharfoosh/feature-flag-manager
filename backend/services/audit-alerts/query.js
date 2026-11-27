@@ -115,25 +115,41 @@ async function monitoring(teamId, hours, db = pool) {
     window,
   );
 
-  // One point per hour, including hours with nothing in them, so the chart has no holes.
+  // The endpoints most often refused with 403 (access.denied records method and path), so an
+  // Admin sees what an attacker or a confused Developer was trying to reach.
+  const topEndpoints = db.query(
+    `SELECT concat_ws(' ', details->>'method', details->>'path') AS endpoint, count(*)::int AS count
+       FROM audit_events
+      WHERE team_id = $1 AND action = 'access.denied' AND ${since}
+      GROUP BY 1 ORDER BY count DESC, endpoint LIMIT 6`,
+    window,
+  );
+
+  // One point per bucket, including empty ones, so the chart has no holes. Buckets are hourly,
+  // except in the 1-hour window: 5 minutes, so a burst of attacks shows its shape.
+  const bucketMinutes = hours <= 1 ? 5 : 60;
+  const buckets = (hours * 60) / bucketMinutes;
   const series = db.query(
     `SELECT h.hour,
             count(e.id) FILTER (WHERE e.action = 'login.failed')::int  AS failed_logins,
             count(e.id) FILTER (WHERE e.action = 'access.denied')::int AS forbidden,
             count(e.id) FILTER (WHERE e.action = 'server.error')::int  AS server_errors
-       FROM generate_series(date_trunc('hour', now()) - make_interval(hours => $2 - 1),
-                            date_trunc('hour', now()), interval '1 hour') AS h(hour)
+       FROM generate_series(
+              date_bin(make_interval(mins => $2), now(), timestamptz '2000-01-01 00:00:00+00') - make_interval(mins => $2 * ($3 - 1)),
+              date_bin(make_interval(mins => $2), now(), timestamptz '2000-01-01 00:00:00+00'),
+              make_interval(mins => $2)) AS h(hour)
        LEFT JOIN audit_events e
               ON e.team_id = $1 AND e.category = 'security'
-             AND e.at >= h.hour AND e.at < h.hour + interval '1 hour'
+             AND e.at >= h.hour AND e.at < h.hour + make_interval(mins => $2)
       GROUP BY h.hour ORDER BY h.hour`,
-    window,
+    [teamId, bucketMinutes, buckets],
   );
 
-  const [t, ips, s] = await Promise.all([totals, topIps, series]);
+  const [t, ips, ends, s] = await Promise.all([totals, topIps, topEndpoints, series]);
   const r = t.rows[0];
   return {
     hours,
+    bucketMinutes,
     failedLogins: r.failed_logins,
     forbidden: r.forbidden,
     botCheckFailures: r.bot_check_failures,
@@ -141,6 +157,7 @@ async function monitoring(teamId, hours, db = pool) {
     rateLimited: r.rate_limited,
     alertFailures: r.alert_failures,
     topFailedLoginIps: ips.rows,
+    topRefusedEndpoints: ends.rows,
     series: s.rows.map((row) => ({
       hour: row.hour,
       failedLogins: row.failed_logins,
