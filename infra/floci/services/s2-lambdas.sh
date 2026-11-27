@@ -55,6 +55,16 @@ ROUTES=(
 THROTTLE_RATE=50
 THROTTLE_BURST=100
 
+# Turnstile (the login bot check) on Floci: Cloudflare's published TEST keys, which always pass.
+# The real widget only works on the hostnames registered with Cloudflare (the Vercel site), not on
+# the local Floci site, and Floci is a local test deployment. backend/middleware/turnstile.js
+# accepts test keys only when NODE_ENV=development, so ffm-flags-fn (the only function that checks
+# Turnstile) gets that too. On Floci it changes nothing else: cookies are already not "secure"
+# (plain http) and EVAL_RATE_LIMIT is not set. Vercel keeps its real keys and production mode.
+# Without these, every Floci login answered 503 BOT_CHECK_UNAVAILABLE.
+TURNSTILE_TEST_SITE_KEY="1x00000000000000000000AA"
+TURNSTILE_TEST_SECRET_KEY="1x0000000000000000000000000000000AA"
+
 # Temporary files go in build/ (ignored by git) with a RELATIVE path: the Windows AWS CLI cannot
 # open Git Bash paths like /tmp/... . They are always deleted, including secret values.
 TMP="build/tmp-s2-$$"
@@ -148,7 +158,11 @@ JSON
     s3_vars=",ALERTS_QUEUE_URL=${ALERTS_QUEUE_URL},METRICS_NAMESPACE=FFM"
     [ "$service" = audit ] && [ -n "$ALERTS_DLQ_URL" ] && s3_vars+=",ALERTS_DLQ_URL=${ALERTS_DLQ_URL}"
   fi
-  local env_vars="Variables={SECRET_ID=${secret},CORS_ORIGINS=${WEB_ORIGIN}${s3_vars}}"
+  # Login bot check: test keys, only on the function that serves /auth (see the note at the top).
+  local login_vars=""
+  [ "$service" = flags ] && \
+    login_vars=",NODE_ENV=development,TURNSTILE_SITE_KEY=${TURNSTILE_TEST_SITE_KEY},TURNSTILE_SECRET_KEY=${TURNSTILE_TEST_SECRET_KEY}"
+  local env_vars="Variables={SECRET_ID=${secret},CORS_ORIGINS=${WEB_ORIGIN}${s3_vars}${login_vars}}"
   if awsl lambda get-function --function-name "$fn" >/dev/null 2>&1; then
     awsl lambda update-function-code --function-name "$fn" --zip-file fileb://build/lambda.zip >/dev/null
     awsl lambda wait function-updated --function-name "$fn" 2>/dev/null || true
@@ -233,6 +247,7 @@ check() { # method path expected-status expected-function
 check GET  /api/v1/health          200 eval
 check GET  /api/v1/flags           401 flags
 check GET  /api/v1/auth/me         401 flags
+check GET  /api/v1/auth/config     200 flags   # 503 here = no Turnstile keys, so nobody can log in
 check POST /api/v1/evaluations     401 eval
 check GET  /api/v1/rollouts/x      401 eval
 check GET  /api/v1/audit           401 audit

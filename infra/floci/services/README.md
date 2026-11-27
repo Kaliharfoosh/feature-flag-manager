@@ -6,6 +6,7 @@ style: Git Bash, safe to run again, secrets never printed.
 | Script | Student | What it builds |
 |---|---|---|
 | `s2-lambdas.sh` | S2 Habiba | **all three Lambdas** (`ffm-flags-fn`, `ffm-eval-fn`, `ffm-audit-fn`), each with its own **secret**, **IAM role** and **log group**, plus **API Gateway** `ffm-http-api` routing every path to the right one, with a throttle on evaluations. S2's counted services: Lambda (`ffm-eval-fn`), API Gateway, Secrets Manager. |
+| `s2-website.sh` | S2 Habiba | the React frontend as the **S3** static website `ffm-web` (http://ffm-web.s3-website.localhost.floci.io:4566), built with the API Gateway address. Website hosting with `index.html` for every route, a read-only public policy (public ACLs stay blocked), and a self-test (site, deep link, API address, bot check, CORS, login config). Run it **after** `s2-lambdas.sh`, and again after any frontend change. |
 | `s1-….sh` | S1 Youssef | to come: S3 snapshots, KMS, EventBridge |
 | `s3-audit.sh` | S3 Ebrahim | the **alert outbox**: **SQS** `ffm-alerts-queue` + `ffm-alerts-dlq` (after 3 tries), processed by Lambda `ffm-alert-worker`; **CloudWatch** alarm `ffm-failed-logins`; **SNS** topic `ffm-ops-alerts` (+ `ffm-ops-inbox` queue subscribed, to show delivery). The GitHub token moves to `ffm/github-token`, readable only by the worker. Run it **after** `s2-lambdas.sh`. S3's counted services: SQS, CloudWatch, SNS, plus **EventBridge Scheduler** (`ffm-alert-sweeper` every 10 min, `ffm-daily-audit-summary` at 06:00 UTC) as a 4th. |
 
@@ -43,6 +44,8 @@ Docker Desktop running, then from the repo root:
 ```bash
 docker compose -f infra/floci/docker-compose.yml up -d   # Floci
 bash infra/floci/services/s2-lambdas.sh                  # Git Bash: build + deploy everything
+bash infra/floci/services/s2-website.sh                  # the frontend on S3, calling that API
+bash infra/floci/services/s3-audit.sh                    # S3's alert outbox, alarm and schedules
 ```
 
 **Every run deploys**: it rebuilds `build/lambda.zip` and uploads it to all three functions, so
@@ -51,8 +54,9 @@ duplicated. `SKIP_BUILD=1 bash infra/floci/services/s2-lambdas.sh` reuses the la
 
 It needs `DATABASE_URL_APP` (the `ffm_app` login) in `.env` and stops with a clear message if that
 is missing. It ends with a self-test: each function's health on its own (proves Lambda → Secrets
-Manager → Neon), then eight requests through API Gateway, checking the status AND which function
-answered. After every check passes it removes the old Lab 7 function `ffm-api` and its role.
+Manager → Neon), then nine requests through API Gateway, checking the status AND which function
+answered. One of them is `GET /api/v1/auth/config`: it answers 503 if the login bot check has no
+keys, which means nobody can log in on Floci. After every check passes it removes the old Lab 7 function `ffm-api` and its role.
 
 ## Honest limits (for the report)
 
@@ -61,6 +65,10 @@ answered. After every check passes it removes the old Lab 7 function `ffm-api` a
 - All three functions share the `ffm_app` login. Improvement: one database login per service, so
   a bug in one service cannot reach another service's tables.
 - The functions talk to the live Neon database, so test with a test flag and a test API key.
+- Login on Floci uses Cloudflare's published Turnstile **test** keys (they always pass), set on
+  `ffm-flags-fn` with `NODE_ENV=development`, because the real Turnstile widget only works on the
+  hostnames registered with Cloudflare (the Vercel site). So the bot check is real on Vercel and
+  only simulated on Floci; the account lockout (5 failures in 15 minutes) still applies on Floci.
 
 ## S3: the alert outbox (`s3-audit.sh`)
 
