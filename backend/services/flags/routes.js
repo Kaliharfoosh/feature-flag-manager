@@ -1,12 +1,15 @@
 const { Router } = require('express');
-const { requireAuth } = require('../../middleware/auth');
+const { requireAuth, requireRole } = require('../../middleware/auth');
 const { requireCsrf } = require('../../middleware/csrf');
-const { list, create, detail, toggle, update, remove } = require('./controller');
+const { history, recoverable, restore, list, create, detail, toggle, update, remove } = require('./controller');
 
 const router = Router();
 
 router.get('/', requireAuth, list);
 router.post('/', requireAuth, requireCsrf, create);
+router.get('/recovery', requireAuth, requireRole('admin'), recoverable);
+router.get('/:flagId/history', requireAuth, history);
+router.post('/:flagId/restore', requireAuth, requireRole('admin'), requireCsrf, restore);
 router.get('/:flagId', requireAuth, detail);
 router.patch('/:flagId', requireAuth, requireCsrf, update);
 router.delete('/:flagId', requireAuth, requireCsrf, remove);

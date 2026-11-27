@@ -1,4 +1,5 @@
 const audit = require('../../shared/audit');
+const cloud = require('./cloud');
 const github = require('../audit-alerts/github');
 const { parseListQuery, parseCreateBody, parseUpdateBody, parseToggle, parseFlagId } = require('./schema');
 const { listFlags, createFlag, getFlag, toggleEnvironment, updateFlag, deleteFlag } = require('./service');
@@ -12,6 +13,7 @@ async function list(req, res) {
 async function create(req, res) {
   const input = parseCreateBody(req.body);
   const flag = await createFlag(req, input);
+  await cloud.flush(req);
   res.set('Cache-Control', 'no-store').status(201).json(flag);
 }
 
@@ -33,6 +35,7 @@ async function toggle(req, res) {
     throw error;
   }
   // Deliver alerts only after the toggle and its audit record have committed.
+  await cloud.flush(req);
   await github.deliverPending(req);
   res.set('Cache-Control', 'no-store').json(result);
 }
@@ -55,6 +58,7 @@ async function update(req, res) {
     await auditDenial(req, error);
     throw error;
   }
+  await cloud.flush(req);
   await github.deliverPending(req);
   res.set('Cache-Control', 'no-store').json(flag);
 }
@@ -67,8 +71,26 @@ async function remove(req, res) {
     await auditDenial(req, error);
     throw error;
   }
+  await cloud.flush(req);
   await github.deliverPending(req);
   res.status(204).end();
 }
 
-module.exports = { list, create, detail, toggle, update, remove };
+async function history(req, res) {
+  const recovery = require('./recovery');
+  const { cursor } = recovery.parseQuery(req.query);
+  res.set('Cache-Control', 'no-store').json(await recovery.history(req, parseFlagId(req.params.flagId), cursor));
+}
+async function recoverable(req, res) {
+  const recovery = require('./recovery');
+  const { cursor } = recovery.parseQuery(req.query);
+  res.set('Cache-Control', 'no-store').json(await recovery.recoverable(req, cursor));
+}
+async function restore(req, res) {
+  const recovery = require('./recovery');
+  const flag = await recovery.restore(req, parseFlagId(req.params.flagId), recovery.parseRestore(req.body));
+  await cloud.flush(req);
+  await github.deliverPending(req);
+  res.set('Cache-Control', 'no-store').json(flag);
+}
+module.exports = { history, recoverable, restore, list, create, detail, toggle, update, remove };
