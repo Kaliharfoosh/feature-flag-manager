@@ -2,13 +2,15 @@
 
 | Word | Meaning | Ours |
 |---|---|---|
-| Role | The badge. A service "wears" it to get permission. | 5 roles, listed below |
+| Role | The badge. A service "wears" it to get permission. | 6 roles, listed below |
 | Trust policy | WHO may wear the badge. | Lambda roles: only the Lambda service (`trust-policy.json`). Lab 8 roles: only ECS tasks. |
 | Permissions policy | WHAT the badge opens. | One policy per role, naming the exact secret and log group |
 | Resource policy | A second lock on the secret itself: WHO may open it. | One per secret, naming only its own role |
 
 All roles are created by scripts, never by hand:
-`infra/floci/services/s2-lambdas.sh` (the three Lambda roles) and `infra/floci/lab8/02-iam.sh` (Lab 8).
+`infra/floci/services/s2-lambdas.sh` (the three Lambda roles), `infra/floci/services/s3-audit.sh`
+(the alert worker's role, and the `ffm-alerts-send` policy on the three Lambda roles) and
+`infra/floci/lab8/02-iam.sh` (Lab 8).
 Account `000000000000` and region `us-east-1` are Floci's defaults.
 
 ## All roles
@@ -21,11 +23,16 @@ Account `000000000000` and region `us-east-1` are Floci's defaults.
 | | | `logs:CreateLogStream`, `logs:PutLogEvents` | `arn:aws:logs:us-east-1:000000000000:log-group:/aws/lambda/ffm-eval-fn:*` | Writes its own logs only. |
 | `ffm-audit-role` | Lambda `ffm-audit-fn` (S3: audit, alerts, monitoring) | `secretsmanager:GetSecretValue` | `arn:aws:secretsmanager:us-east-1:000000000000:secret:ffm/audit-db-*` | Same as above, for its own secret only. |
 | | | `logs:CreateLogStream`, `logs:PutLogEvents` | `arn:aws:logs:us-east-1:000000000000:log-group:/aws/lambda/ffm-audit-fn:*` | Writes its own logs only. |
+| `ffm-flags-role`, `ffm-eval-role`, `ffm-audit-role` (policy `ffm-alerts-send`, from `s3-audit.sh`) | the three Lambdas, after COMMIT | `sqs:SendMessage` | `arn:aws:sqs:us-east-1:000000000000:ffm-alerts-queue` | Any of them can raise an alert (a prod toggle is in `ffm-flags-fn`), so each may put `{ alertId }` on the outbox. They cannot read, delete or purge messages, or reach any other queue. |
+| `ffm-alert-worker-role` | Lambda `ffm-alert-worker` (S3: the outbox processor, triggered by SQS) | `secretsmanager:GetSecretValue` | `arn:aws:secretsmanager:us-east-1:000000000000:secret:ffm/worker-db-*` and `…:secret:ffm/github-token-*` | Its database login and the GitHub token. It is the **only** role that can read the token. |
+| | | `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:ChangeMessageVisibility`, `sqs:GetQueueAttributes` | `arn:aws:sqs:us-east-1:000000000000:ffm-alerts-queue` | What the SQS trigger needs to hand it messages and remove the ones it finished. No `SendMessage`, and no access to the DLQ. |
+| | | `logs:CreateLogStream`, `logs:PutLogEvents` | `arn:aws:logs:us-east-1:000000000000:log-group:/aws/lambda/ffm-alert-worker:*` | Writes its own logs only. |
 | `ffm-ecs-execution-role` | ECS itself, to START a Lab 8 task | `secretsmanager:GetSecretValue` | `arn:aws:secretsmanager:us-east-1:000000000000:secret:ffm/load-test-config*` | ECS injects this one secret (the throwaway load-test database) into the container. |
 | | | `logs:CreateLogStream`, `logs:PutLogEvents` | `arn:aws:logs:us-east-1:000000000000:log-group:/aws/ecs/ffm-api:*` | Sends the container's output to its own log group. |
 | `ffm-ecs-task-role` | Our code while it runs in a Lab 8 task | **none** | — | The API only talks to Postgres, so it needs no AWS rights. If the code were taken over, it could not read secrets or touch any AWS service. |
 
-Policy names: `ffm-flags-fn-access`, `ffm-eval-fn-access`, `ffm-audit-fn-access` and `ffm-ecs-execution-policy`.
+Policy names: `ffm-flags-fn-access`, `ffm-eval-fn-access`, `ffm-audit-fn-access`, `ffm-alerts-send`,
+`ffm-alert-worker-access` and `ffm-ecs-execution-policy`.
 
 The `-*` at the end of a secret ARN is needed because AWS adds 6 random characters to every
 secret's ARN. It matches only that one secret's name, not any other secret.
@@ -39,16 +46,22 @@ The log groups are created by the script before the function runs, so no role ne
 | `ffm/flags-db` | `ffm_app` database login + session secret | `arn:aws:iam::000000000000:role/ffm-flags-role` |
 | `ffm/eval-db` | `ffm_app` database login + session secret | `arn:aws:iam::000000000000:role/ffm-eval-role` |
 | `ffm/audit-db` | `ffm_app` database login + session secret | `arn:aws:iam::000000000000:role/ffm-audit-role` |
+| `ffm/worker-db` | `ffm_app` database login (no session secret: the worker has no HTTP routes) | `arn:aws:iam::000000000000:role/ffm-alert-worker-role` |
+| `ffm/github-token` | fine-grained GitHub token (Issues: write, one repo) + `GITHUB_REPO` | `arn:aws:iam::000000000000:role/ffm-alert-worker-role` |
 
 So a function is stopped twice: its own role does not list the other secrets, and the other
-secrets do not list its role. The GitHub token is in none of these secrets, so local Floci tests
-cannot open real GitHub issues.
+secrets do not list its role. The GitHub token is only in `ffm/github-token`: the three web
+functions cannot read it, so a bug in the flags or eval code cannot leak it. (On Vercel it is a
+Sensitive environment variable, because Vercel runs everything in one function.)
+
+The alert queue has a resource policy too (`s3-audit.sh`): only the three web roles may send, and
+only the worker's role may receive or delete.
 
 ## What NO role can do
 
 - read any secret except its own one
 - delete or change anything: no `Delete*`, no `Put*` on secrets, no IAM changes
-- use any other AWS service (S3, SQS, KMS, ...)
+- use any AWS service not listed in its row (S3, KMS, ...); only the alert queue is shared, as above
 - use `*` as an action or as a resource
 
 **Why not one broad admin role?** One bug or one leaked key in any function could then read every
@@ -67,7 +80,8 @@ awsl iam list-role-policies --role-name ffm-ecs-task-role     # empty on purpose
 ```
 
 None of these print a secret value. Checked on 27 Nov 2026: Floci lists exactly these 5 roles,
-and the policies it returns match the table above.
+and the policies it returns match the table above. (`ffm-alert-worker-role` was added the same
+day by `s3-audit.sh`.)
 
 ## Database side
 

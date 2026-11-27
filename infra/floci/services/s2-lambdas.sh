@@ -71,6 +71,7 @@ node --env-file=.env -e "process.exit(process.env.DATABASE_URL_APP ? 0 : 1)" \
 # is not valid in the others. Reuse the one Lab 7's ffm/api-secrets has; else SESSION_SECRET.
 awsl secretsmanager get-secret-value --secret-id ffm/api-secrets --query SecretString --output text \
   > "$TMP/shared.json" 2>/dev/null || echo '{}' > "$TMP/shared.json"
+ALERTS_QUEUE_URL=$(awsl sqs get-queue-url --queue-name ffm-alerts-queue --query QueueUrl --output text 2>/dev/null || true)
 echo "[0/6] done: Floci is up"
 
 echo "=== [1/6] Build the Lambda code (build/lambda.zip, one zip for all three) ==="
@@ -138,7 +139,9 @@ JSON
   echo "  role        ${role}"
 
   # Lambda: create it, or upload the new code and settings (= deploy)
-  local env_vars="Variables={SECRET_ID=${secret},CORS_ORIGINS=${WEB_ORIGIN}}"
+  # ALERTS_QUEUE_URL: S3's alert outbox (s3-audit.sh). Kept when the queue exists, so a re-run
+  # of this script does not switch the functions back to sending GitHub issues inline.
+  local env_vars="Variables={SECRET_ID=${secret},CORS_ORIGINS=${WEB_ORIGIN}${ALERTS_QUEUE_URL:+,ALERTS_QUEUE_URL=${ALERTS_QUEUE_URL}}}"
   if awsl lambda get-function --function-name "$fn" >/dev/null 2>&1; then
     awsl lambda update-function-code --function-name "$fn" --zip-file fileb://build/lambda.zip >/dev/null
     awsl lambda wait function-updated --function-name "$fn" 2>/dev/null || true
