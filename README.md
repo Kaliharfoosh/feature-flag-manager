@@ -62,6 +62,7 @@ The same codebase runs in two places:
 **Flag management**
 - Create, toggle, archive and delete flags per environment, with role-based access (Admins change `prod`, Developers work in `dev` and `staging`)
 - Shared sign-in with server-side sessions, CSRF protection and Cloudflare Turnstile
+- Admin API key management: create environment-scoped keys, view safe prefixes, revoke access, and audit every change
 
 **Rollouts and evaluation**
 - Percentage rollouts with stable, deterministic user bucketing

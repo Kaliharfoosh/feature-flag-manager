@@ -5,7 +5,7 @@
 // stolen secret in one service cannot reach the others. Each Lambda in backend/lambdas/ calls
 // buildApp with just its own service. API Gateway sends each path to the right Lambda.
 //
-//   flags -> /api/v1/auth, /api/v1/flags                                   (S1, ffm-flags-fn)
+//   flags -> /api/v1/auth, /api/v1/flags, /api/v1/keys                                   (S1, ffm-flags-fn)
 //   eval  -> /api/v1/evaluations, /rollouts, /rules, /preview              (S2, ffm-eval-fn)
 //   audit -> /api/v1/audit, /monitoring, /alert-rules, /alerts             (S3, ffm-audit-fn)
 //
@@ -81,6 +81,7 @@ function buildApp({ services = ALL_SERVICES } = {}) {
   // Service routers
   if (has('flags')) {
     app.use('/api/v1/auth', require('./services/auth/routes'));               // S1
+    app.use('/api/v1/keys', require('./services/keys/routes'));
     app.use('/api/v1/flags', require('./services/flags/routes'));             // S1
   }
   if (has('eval')) app.use('/api/v1', require('./services/keys-evaluation/routes'));  // S2

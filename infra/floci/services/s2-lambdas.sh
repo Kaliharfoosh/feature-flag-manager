@@ -33,6 +33,9 @@ SERVICES=(
 # The catch-all and /health go to ffm-eval-fn: S2 owns operations (health, unknown paths -> 404).
 ROUTES=(
   "ffm-flags-fn|ANY /api/v1/auth/{proxy+}"
+  "ffm-flags-fn|GET /api/v1/keys"
+  "ffm-flags-fn|POST /api/v1/keys"
+  "ffm-flags-fn|DELETE /api/v1/keys/{id}"
   "ffm-flags-fn|ANY /api/v1/flags"
   "ffm-flags-fn|ANY /api/v1/flags/{proxy+}"
   "ffm-eval-fn|POST /api/v1/evaluations"

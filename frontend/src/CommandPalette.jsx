@@ -16,6 +16,7 @@ export default function CommandPalette({ open, onClose, session, onSignOut }) {
       { id: 'flags', icon: '⚑', label: 'Flags', hint: 'all flags, toggles and rollouts', path: '/', run: go('/') },
       { id: 'audit', icon: '≡', label: 'Audit log', hint: 'who changed what, filter and export', path: '/audit', run: go('/audit') },
       session?.user.role === 'admin' && { id: 'monitoring', icon: '◉', label: 'Monitoring', hint: 'security events, alerts and the alert queue', path: '/monitoring', run: go('/monitoring') },
+      session?.user.role === 'admin' && { id: 'keys', icon: '⚿', label: 'API keys', hint: 'create, list and revoke application access', path: '/keys', run: go('/keys') },
       { id: 'account', icon: '@', label: 'Account', hint: 'your name, email and role', path: '/account', run: go('/account') },
       { id: 'signout', icon: '⏻', label: 'Sign out', hint: 'end this session', path: 'session', run: onSignOut },
     ].filter(Boolean)

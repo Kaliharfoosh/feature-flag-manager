@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { getSession, signIn, signOut } from './auth/api.js'
 import { NavLink, matchPath, useLocation } from 'react-router-dom'
 import LoginForm from './auth/LoginForm.jsx'
+import KeysPage from './keys/KeysPage.jsx'
 import FlagsPage from './flags/FlagsPage.jsx'
 import RolloutPage from './rollouts/RolloutPage.jsx'
 import AuditPage from './audit/AuditPage.jsx'
@@ -13,6 +14,7 @@ import './App.css'
 
 function App() {
   const { pathname } = useLocation()
+  const keysView = pathname === '/keys'
   const accountView = pathname === '/account'
   const rolloutMatch = matchPath('/flags/:flagId/rollout', pathname) // S2: rollout page
   const auditView = pathname === '/audit'           // S3: audit log
@@ -105,6 +107,7 @@ function App() {
               <nav className="workspace-nav" aria-label="Workspace">
                 <NavLink to="/" end>flags</NavLink>
                 <NavLink to="/audit">audit</NavLink>
+                {session.user.role === 'admin' && <NavLink to="/keys">keys</NavLink>}
                 {session.user.role === 'admin' && <NavLink to="/monitoring">monitoring</NavLink>}
                 <NavLink to="/account">account</NavLink>
               </nav>
@@ -156,7 +159,8 @@ function App() {
         )}
         {session && auditView && <AuditPage key={session.user.teamId} session={session} />}
         {session && monitoringView && <MonitoringPage key={session.user.teamId} session={session} />}
-        {session && !accountView && !rolloutMatch && !auditView && !monitoringView && <FlagsPage key={session.user.teamId} csrfToken={session.csrfToken} role={session.user.role} />}
+        {session && keysView && <KeysPage key={session.user.teamId} session={session} />}
+        {session && !keysView && !accountView && !rolloutMatch && !auditView && !monitoringView && <FlagsPage key={session.user.teamId} csrfToken={session.csrfToken} role={session.user.role} />}
         {session && accountView && (
           <section className="panel" aria-labelledby="account-heading">
             <h1 id="account-heading">Your account</h1>
