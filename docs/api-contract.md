@@ -323,12 +323,15 @@ Evaluation order: archived → `false`; env disabled → `false`; user blocklist
 
 ---
 
-## S1 · API keys (planned, not built yet)
+## S1 · API keys
 
-Key management moved to S1 after the Phase 1 feedback. These three endpoints are the agreed design
-but do not exist in the code yet. Until they do, keys are created with `npm run seed:key`
-(`backend/db/seed-key.js`), which stores only the hash and prints the key once. The key check
-itself (hash lookup, revoked → `401`) is already live inside `POST /evaluations`.
+Admin-only key management is implemented in `backend/services/keys` and the `/keys` page.
+All three endpoints use the session cookie, scope every database read/write to the signed-in
+team, and return `Cache-Control: no-store`. API keys cannot authenticate to these routes.
+Writes require `X-CSRF-Token`; Developer requests return `403 FORBIDDEN` before accessing keys.
+Only creation returns the raw key. Only its SHA-256 hash is stored; list and audit rows never
+contain the raw key or hash. Changes, audit rows and key-change alerts commit atomically.
+Alerts are delivered after commit through the existing GitHub/SQS integration.
 
 ### GET /keys — list keys (never the secret)
 
@@ -357,8 +360,8 @@ itself (hash lookup, revoked → `401`) is already live inside `POST /evaluation
 ### DELETE /keys/:id — revoke
 
 - Who: Admin. Needs `X-CSRF-Token`.
-- `204 No Content`. The row stays with `revokedAt` set; the key stops working immediately.
-- Errors: `401`, `403`, `404`.
+- `204 No Content`. The row stays with `revokedAt` set; subsequent evaluations reject the key. Repeating revocation returns 204 without another audit event.
+- Errors: `400 VALIDATION_ERROR` (malformed UUID), `401`, `403`, `404 NOT_FOUND` (unknown or foreign key).
 - Audit: `key.revoked`.
 
 ---

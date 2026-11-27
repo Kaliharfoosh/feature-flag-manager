@@ -58,6 +58,6 @@ rows (ST-xx, ROL-xx) are in [`api-test-plan.md`](api-test-plan.md).
 | All services share the `ffm_app` login | Kept simple before the deadline | One database login per service, so a bug in one service cannot reach another's tables |
 | Evaluations have no edge rate limit | The Vercel free plan allows one rate-limit rule; it protects login | Paid plan, or the `@vercel/firewall` SDK, for a per-IP limit on `/evaluations` |
 | Floci does not prove IAM enforcement | The emulator stores policies but does not document checking them | Run the same scripts against a real AWS account |
-| No key management UI yet (`/keys`) | S1's endpoints are not built; keys come from `npm run seed:key` | Build create / list / revoke with audit, then key expiry and rotation |
+| API keys do not expire automatically | Admins can create and revoke keys in `/keys`; secrets are shown once and changes are audited | Add scheduled expiry and a rotation workflow |
 | No MFA enforced inside the app | Out of scope for the coursework | MFA for Admins inside the app; meanwhile each team member turns on MFA for their GitHub, Vercel and Neon accounts |
 | Bot Protection managed rule is off | Could challenge the Acme Store's server calls | Turn it on in Log mode, check, then add a bypass for `/evaluations` |
