@@ -55,3 +55,15 @@ export function deleteFlag(flagId, csrfToken) {
     headers: { 'X-CSRF-Token': csrfToken },
   })
 }
+export function getFlagHistory(flagId, cursor, signal) {
+  const query = cursor ? '?' + new URLSearchParams({ cursor }) : ''
+  return request('/' + encodeURIComponent(flagId) + '/history' + query, { signal })
+}
+export function getRecoverableFlags(cursor, signal) {
+  return request('/recovery' + (cursor ? '?' + new URLSearchParams({ cursor }) : ''), { signal })
+}
+export function restoreFlag(flagId, input, csrfToken) {
+  return request('/' + encodeURIComponent(flagId) + '/restore', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken }, body: JSON.stringify(input),
+  })
+}
