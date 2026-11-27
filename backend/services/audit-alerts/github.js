@@ -8,11 +8,14 @@
 //      alert from a rolled-back transaction simply doesn't exist, so nothing is sent.
 //   3. GitHub is called with a 3-second timeout (nothing runs in the background on Vercel).
 //      Success stores the issue number and URL; any failure stores a short last_error.
+//      On Floci (ALERTS_QUEUE_URL set) step 3 runs in the worker Lambda instead: deliverPending
+//      only puts the alert id on the SQS outbox (queue.js, worker.js).
 //
 // The token is read from GITHUB_TOKEN only. It is never logged, stored or put in an error.
 // Use a fine-grained token limited to "Issues: write" on this one repository, set to expire
 // after the week 12 demo.
 const { pool } = require('../../db/pool');
+const queue = require('./queue');
 
 const TIMEOUT_MS = 3000;
 const STALE_SENDING = '2 minutes'; // a "sending" row older than this was cut off mid-request
@@ -141,14 +144,25 @@ async function deliver(alertId, { db = pool, ...options } = {}) {
 
 // For callers, right after COMMIT. Never throws: a GitHub problem must not fail the change the
 // user just made. Failed alerts stay "failed" and show on the monitoring card for a retry.
+// With ALERTS_QUEUE_URL set (Floci) each alert goes to the SQS outbox instead (queue.js); if the
+// queue cannot be reached, it is sent inline so the alert is not left waiting.
 async function deliverPending(req, options) {
   const ids = (req && req.pendingAlerts) || [];
   if (req) req.pendingAlerts = [];
+  const log = (req && req.log) || console;
   for (const id of ids) {
+    if (queue.enabled()) {
+      try {
+        await queue.enqueue(id);
+        continue;
+      } catch (err) {
+        log.warn({ alertId: id, reason: err.message }, 'alert: queue unavailable, sending inline');
+      }
+    }
     try {
       await deliver(id, options);
     } catch (err) {
-      ((req && req.log) || console).warn({ alertId: id, reason: err.message }, 'alert: GitHub issue not created');
+      log.warn({ alertId: id, reason: err.message }, 'alert: GitHub issue not created');
     }
   }
 }

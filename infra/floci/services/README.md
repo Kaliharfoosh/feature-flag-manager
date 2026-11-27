@@ -7,7 +7,7 @@ style: Git Bash, safe to run again, secrets never printed.
 |---|---|---|
 | `s2-lambdas.sh` | S2 Habiba | **all three Lambdas** (`ffm-flags-fn`, `ffm-eval-fn`, `ffm-audit-fn`), each with its own **secret**, **IAM role** and **log group**, plus **API Gateway** `ffm-http-api` routing every path to the right one, with a throttle on evaluations. S2's counted services: Lambda (`ffm-eval-fn`), API Gateway, Secrets Manager. |
 | `s1-….sh` | S1 Youssef | to come: S3 snapshots, KMS, EventBridge |
-| `s3-….sh` | S3 Ebrahim | to come: SQS + DLQ, CloudWatch alarm, SNS |
+| `s3-audit.sh` | S3 Ebrahim | the **alert outbox**: **SQS** `ffm-alerts-queue` + `ffm-alerts-dlq` (after 3 tries), processed by Lambda `ffm-alert-worker`; **CloudWatch** alarm `ffm-failed-logins`; **SNS** topic `ffm-ops-alerts` (+ `ffm-ops-inbox` queue subscribed, to show delivery). The GitHub token moves to `ffm/github-token`, readable only by the worker. Run it **after** `s2-lambdas.sh`. S3's counted services: SQS, CloudWatch, SNS. |
 
 S2 owns the Lambda setup and the API Gateway route table for the whole team, so S1 and S3 only add
 their own other services.
@@ -61,3 +61,41 @@ answered. After every check passes it removes the old Lab 7 function `ffm-api` a
 - All three functions share the `ffm_app` login. Improvement: one database login per service, so
   a bug in one service cannot reach another service's tables.
 - The functions talk to the live Neon database, so test with a test flag and a test API key.
+
+## S3: the alert outbox (`s3-audit.sh`)
+
+```
+ffm-flags-fn / ffm-eval-fn / ffm-audit-fn          (any of them can raise an alert)
+   │ COMMIT, then SendMessage {alertId}            ← ALERTS_QUEUE_URL is set on all three
+   ▼
+SQS ffm-alerts-queue ──trigger, batch 1──► Lambda ffm-alert-worker ──► GitHub issue
+   │ 3 failed tries                                 (reads ffm/worker-db + ffm/github-token)
+   ▼
+SQS ffm-alerts-dlq  (kept 14 days; shown on the monitoring page)
+
+CloudWatch alarm ffm-failed-logins (FFM/FailedLogins ≥ 5 in 5 min) ──► SNS ffm-ops-alerts ──► ffm-ops-inbox
+```
+
+- The request only queues the alert id and answers (89 ms for a prod toggle, against about
+  1.3 s when GitHub is called inside the request).
+- The worker **throws** when GitHub fails, so SQS offers the message again after 60 s; after the
+  3rd failure it moves to the DLQ. The alert row says `failed` with the reason, and an Admin can
+  still retry it.
+- A message delivered twice is safe: the worker claims the alert row first, so the second copy
+  finds nothing to claim and is dropped (`"status":"skipped"` in the log).
+- If the queue cannot be reached, the request sends the issue inline instead (about 2 s), so no
+  alert waits forever. On **Vercel** `ALERTS_QUEUE_URL` is not set and delivery is inline, as before.
+- `s2-lambdas.sh` keeps `ALERTS_QUEUE_URL` when it redeploys, and `s3-audit.sh` adds the send
+  permission as its own policy (`ffm-alerts-send`), so the two scripts can run in any order after
+  the first time.
+
+```bash
+bash infra/floci/services/s3-audit.sh       # needs DATABASE_URL_APP, GITHUB_TOKEN, GITHUB_REPO in .env
+source infra/floci/services/_lib.sh
+awsl sqs get-queue-attributes --queue-url http://floci:4566/000000000000/ffm-alerts-dlq --attribute-names ApproximateNumberOfMessages
+awsl logs tail /aws/lambda/ffm-alert-worker
+```
+
+Checked on 27 Nov 2026 (Floci 2.5.0): the SQS trigger runs the worker; a failing message is offered
+3 times and then moved to the DLQ; the alarm changes to ALARM and SNS delivers its message to the
+subscribed queue. All of these actually run on Floci, not only recorded.

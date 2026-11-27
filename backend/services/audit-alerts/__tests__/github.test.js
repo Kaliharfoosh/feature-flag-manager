@@ -153,3 +153,38 @@ describe('deliverPending', () => {
     expect(db.query).not.toHaveBeenCalled();
   });
 });
+
+describe('deliverPending with the SQS outbox (ALERTS_QUEUE_URL set, Floci)', () => {
+  const queue = require('../queue');
+  let enqueue;
+  beforeEach(() => {
+    process.env.ALERTS_QUEUE_URL = 'http://floci:4566/000000000000/ffm-alerts-queue';
+    enqueue = jest.spyOn(queue, 'enqueue');
+  });
+  afterEach(() => {
+    delete process.env.ALERTS_QUEUE_URL;
+    enqueue.mockRestore();
+  });
+
+  test('only queues the alert ids: no database work and no GitHub call in the request', async () => {
+    enqueue.mockResolvedValue();
+    const db = fakeDb();
+    const fetchImpl = created();
+    const req = { pendingAlerts: ['a1', 'a2'], log: { warn: jest.fn() } };
+    await github.deliverPending(req, { db, fetchImpl, env });
+    expect(enqueue.mock.calls.map((c) => c[0])).toEqual(['a1', 'a2']);
+    expect(db.query).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(req.pendingAlerts).toEqual([]);
+  });
+
+  test('queue unreachable: falls back to sending inline, still never throws', async () => {
+    enqueue.mockRejectedValue(new Error('connect ECONNREFUSED'));
+    const db = fakeDb();
+    const fetchImpl = created();
+    const log = { warn: jest.fn() };
+    await expect(github.deliverPending({ pendingAlerts: ['al1'], log }, { db, fetchImpl, env })).resolves.toBeUndefined();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(log.warn).toHaveBeenCalledWith(expect.objectContaining({ alertId: 'al1' }), 'alert: queue unavailable, sending inline');
+  });
+});
