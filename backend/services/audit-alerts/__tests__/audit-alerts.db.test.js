@@ -110,6 +110,25 @@ describeDb('alerts and audit queries against Postgres', () => {
     expect(m.series[23]).toMatchObject({ failedLogins: 4, forbidden: 1 });
   });
 
+  test('monitoring: attacks with no team are counted, bot checks and API rate limits are charted, 7 days uses 6-hour buckets', async () => {
+    const before = await query.monitoring(teamId, 168, client);
+    // credential stuffing with emails that do not exist: no team
+    for (let i = 0; i < 3; i += 1) await audit.recordSecurity({ ip: '203.0.113.50' }, 'login.failed', { rateLimited: false }, { teamId: null, db: client });
+    await audit.recordSecurity({ ip: '203.0.113.50' }, 'bot_check.failed', { reason: 'missing_or_invalid_token' }, { teamId: null, db: client });
+    // this team: a failed bot check and an API-key rate limit
+    await audit.recordSecurity({ ip: '198.51.100.7' }, 'bot_check.failed', { reason: 'missing_or_invalid_token' }, { teamId, db: client });
+    await audit.recordSecurity({ ip: '198.51.100.7' }, 'rate_limit.hit', { reason: 'api_key', count: 120 }, { teamId, db: client });
+
+    const m = await query.monitoring(teamId, 168, client);
+    expect(m.unattributed.failedLogins - before.unattributed.failedLogins).toBe(3);
+    expect(m.unattributed.botCheckFailures - before.unattributed.botCheckFailures).toBe(1);
+    expect(m.topFailedLoginIps).toEqual([]); // no-team IPs are never shown to a team
+    expect(m.bucketMinutes).toBe(360);
+    expect(m.series).toHaveLength(28);
+    expect(new Date(m.series[1].hour) - new Date(m.series[0].hour)).toBe(6 * 3600 * 1000);
+    expect(m.series[27]).toMatchObject({ botCheckFailures: 1, rateLimited: 1, failedLogins: 0 });
+  });
+
   test('monitoring: refused endpoints, and 5-minute buckets in the 1-hour window', async () => {
     const dev = req('dev@it.test', teamId);
     for (let i = 0; i < 3; i += 1) await audit.recordSecurity(dev, 'access.denied', { method: 'GET', path: '/api/v1/monitoring' }, { db: client });
