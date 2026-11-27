@@ -3,11 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#14131a">
   <title>Acme Store · Feature flag demo</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
   <script src="/app.js" defer></script>
 </head>
 <body class="show-tags">
+  <!-- Moving colour in the background. Decoration only; still when reduced motion is on. -->
+  <div class="aurora" aria-hidden="true"><span></span><span></span><span></span></div>
+
   <!-- Demo controls: not part of the shop. They pick the shopper and show what the flags said. -->
   <div class="demo-bar" role="region" aria-label="Demo controls">
     <div class="wrap demo-row">
@@ -21,7 +26,7 @@
         <input id="custom-id" maxlength="100" placeholder="or any id, e.g. u-5555" autocomplete="off">
         <button type="submit">Use</button>
       </form>
-      <button type="button" id="refresh">Refresh flags</button>
+      <button type="button" id="refresh">↻ Refresh flags</button>
       <label class="demo-check"><input type="checkbox" id="show-tags" checked> Show flag names</label>
       <button type="button" id="inspector-toggle" aria-expanded="false" aria-controls="inspector">Flag inspector</button>
       <span id="status" class="status" aria-live="polite">Loading flags…</span>
@@ -30,45 +35,90 @@
 
   <div id="banners"></div>
 
-  <header class="top">
+  <header class="top" id="top">
     <div class="wrap top-row">
-      <a class="logo" href="/">Acme<span>Store</span></a>
+      <a class="logo" href="/"><span class="logo-mark" aria-hidden="true">A</span>acme<span class="logo-dot">.</span>store</a>
       <form id="search-form" class="search" role="search">
         <label for="search" class="sr-only">Search products</label>
-        <input id="search" type="search" placeholder="Search products" autocomplete="off">
+        <input id="search" type="search" placeholder="Search headphones, hoodies, bottles…" autocomplete="off">
       </form>
       <div id="header-tools" class="header-tools"></div>
     </div>
     <div id="filters" class="wrap"></div>
   </header>
 
+  <section class="hero wrap" aria-labelledby="hero-title">
+    <div class="hero-copy">
+      <p class="eyebrow"><span class="eyebrow-dot" aria-hidden="true"></span> Winter drop · live now</p>
+      <h1 id="hero-title">Gear that <span class="hero-grad">moves</span><br> with you.</h1>
+      <p class="hero-sub">Six things we love, shipped carbon-neutral. Every feature on this page is switched live by a feature flag, so the store you see depends on who you are.</p>
+      <div class="hero-cta">
+        <a class="primary big" href="#products-heading">Shop the drop <span aria-hidden="true">→</span></a>
+        <a class="ghost big" href="#recs">See today's picks</a>
+      </div>
+      <dl class="hero-stats">
+        <div><dt>Features live</dt><dd><span id="stat-live">0</span><small>/<span id="stat-total">28</span></small></dd></div>
+        <div><dt>Flag answer</dt><dd id="stat-ms">…</dd></div>
+        <div><dt>Shopping as</dt><dd id="stat-who">…</dd></div>
+      </dl>
+    </div>
+    <div class="hero-art" id="hero-art" aria-hidden="true">
+      <span class="orb orb-1"></span>
+      <span class="orb orb-2"></span>
+      <span class="orb orb-3"></span>
+      <span class="float f1">🎧</span>
+      <span class="float f2">👟</span>
+      <span class="float f3">🧥</span>
+      <span class="float f4">🔊</span>
+      <span class="float f5">🥤</span>
+      <div class="hero-card">
+        <span class="hero-card-stars">★★★★★</span>
+        <b>4.8 from 1,414 reviews</b>
+        <span>“Battery lasts all week.”</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="marquee" aria-hidden="true">
+    <div class="marquee-track">
+      <span>Free returns for 60 days</span><span>✦</span><span>Carbon-neutral delivery</span><span>✦</span>
+      <span>Next-day in London</span><span>✦</span><span>2-year warranty</span><span>✦</span>
+      <span>Members earn double points</span><span>✦</span>
+      <span>Free returns for 60 days</span><span>✦</span><span>Carbon-neutral delivery</span><span>✦</span>
+      <span>Next-day in London</span><span>✦</span><span>2-year warranty</span><span>✦</span>
+      <span>Members earn double points</span><span>✦</span>
+    </div>
+  </div>
+
   <main class="wrap layout">
     <div class="shop">
       <section id="persona" class="persona" aria-live="polite"></section>
-      <section aria-labelledby="products-heading">
+      <section class="reveal" aria-labelledby="products-heading">
         <div class="section-head">
-          <h2 id="products-heading">Products</h2>
+          <h2 id="products-heading" class="display">The drop</h2>
           <div id="wishlist-tools"></div>
         </div>
         <div id="products" class="grid"></div>
       </section>
-      <section id="recs" aria-live="polite"></section>
-      <section id="account" class="card" aria-labelledby="account-heading"></section>
+      <section id="recs" class="card recs reveal" aria-live="polite"></section>
+      <section id="account" class="card reveal" aria-labelledby="account-heading"></section>
     </div>
 
     <aside class="side">
-      <section id="basket" class="card" aria-labelledby="basket-heading"></section>
+      <section id="basket" class="card basket" aria-labelledby="basket-heading"></section>
       <section id="checkout" class="card" aria-live="polite" hidden></section>
     </aside>
   </main>
 
   <aside id="inspector" class="inspector" aria-labelledby="inspector-heading" hidden></aside>
   <div id="floating"></div>
+  <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
 
   <footer class="wrap footer">
-    Acme Store is a demo client for the Feature Flag Manager. Its API key stays on the store's
+    <span class="logo small-logo"><span class="logo-mark" aria-hidden="true">A</span>acme<span class="logo-dot">.</span>store</span>
+    <p>Acme Store is a demo client for the Feature Flag Manager. Its API key stays on the store's
     server: this page only sees which features are on. If the flag service fails, every feature
-    is off and the shop works as it did before.
+    is off and the shop works as it did before.</p>
   </footer>
 </body>
 </html>
