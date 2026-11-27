@@ -3,7 +3,7 @@ Rollout Service (S2, Habiba). The `/keys` routes belong to S1 (Youssef); this se
 | File | What it does |
 |---|---|
 | `routes.js` | Signed-in routes, mounted at `/api/v1` after the session: rollouts, rules, preview |
-| `evaluation-routes.js` | `POST /api/v1/evaluations`, mounted in `app.js` **before** the session (no cookie, no CSRF) |
+| `evaluation-routes.js` | `POST /api/v1/evaluations` and `/evaluations/batch`, mounted in `build-app.js` **before** the session (no cookie, no CSRF) |
 | `controller.js` | Validates with `schema.js`, calls the files below, picks the status code |
 | `schema.js` | zod schemas (strict: unknown fields are a 400) |
 | `rollouts.js` | `createDefaults()` for S1, `getRollouts()`, `setPercentage()` (version check, audit row) |
@@ -24,10 +24,10 @@ Shared with S1: `backend/shared/api-keys.js` has `newKey(env)` (use it in `/keys
 - `POST /rollouts/:flagId/:env/rules` `{ userId, kind }`: 201, 400, 401, 403 (Developer on prod), 403 CSRF, 404, 409 `CONFLICT`. Audited as `rule.added`.
 - `DELETE /rules/:ruleId`: 204, 401, 403 (Developer on a prod rule; the rule is read first to learn its env), 403 CSRF, 404. Audited as `rule.removed`.
 - `POST /preview` `{ flagKey, env, userId }`: `{ …, enabled, reason, bucket }`. Same SQL and `evaluate()` as `/evaluations`, so it can never disagree. Writes nothing. 400, 401, 403 (Developer on prod), 403 CSRF, 404.
-
-## Still to do (Phase 2)
-
-The rollout page in the frontend, `demo-client/`.
+- `POST /evaluations/batch` `{ userId, flagKeys }` (1–50 keys): every flag in one query, counted as **one** request for the rate limit. Used by the Acme Store.
+- Rollout page in the frontend (`frontend/src/rollouts/`): percentages per environment, allow/block lists, preview. Prod is locked for Developers there and refused by the API.
+- Demo client `demo-client/` (Acme Store): 28 features read live with a staging key; see its README.
+- On AWS (Floci) this service runs as its own Lambda `ffm-eval-fn` behind API Gateway, with its own secret and IAM role (`infra/floci/services/README.md`).
 
 ## For S1: `rollouts.createDefaults(tx, flagId)`
 

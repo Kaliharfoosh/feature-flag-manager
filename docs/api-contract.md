@@ -321,6 +321,15 @@ A complete flag as returned by the API:
 
 Evaluation order: archived → `false`; env disabled → `false`; user blocklisted → `false`; user allowlisted → `true`; otherwise `sha256(flagKey + ":" + userId)` mod 10000 < percentage × 100.
 
+---
+
+## S1 · API keys (planned, not built yet)
+
+Key management moved to S1 after the Phase 1 feedback. These three endpoints are the agreed design
+but do not exist in the code yet. Until they do, keys are created with `npm run seed:key`
+(`backend/db/seed-key.js`), which stores only the hash and prints the key once. The key check
+itself (hash lookup, revoked → `401`) is already live inside `POST /evaluations`.
+
 ### GET /keys — list keys (never the secret)
 
 - Who: Admin
@@ -511,7 +520,8 @@ screenshot of an error can be matched to its log entry.
 |---|---|
 | 400 bad JSON, 413, 500 | `backend/middleware/errors.js` |
 | 400 field rules | each service's `controller.js` (zod schema) |
-| 401, 403 FORBIDDEN | `backend/middleware/auth.js`, `require-role.js` |
+| 401, 403 FORBIDDEN | `backend/middleware/auth.js` (`requireAuth`, `requireRole`); the prod check for toggles in `backend/services/flags/service.js` |
+| 403 BOT_CHECK_FAILED, 503 BOT_CHECK_UNAVAILABLE | `backend/middleware/turnstile.js` |
 | 403 CSRF_INVALID | `backend/middleware/csrf.js` |
 | 404 ROUTE_NOT_FOUND | `backend/middleware/not-found.js` |
 | 404 NOT_FOUND, 409 | the owning service's `controller.js` after the service returns nothing / zero rows |
