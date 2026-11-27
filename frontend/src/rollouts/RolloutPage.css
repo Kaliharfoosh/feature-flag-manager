@@ -1,40 +1,32 @@
 /* Rollout page (S2). Reuses the flags page look (flags-intro, flags-card, flag-button, flag-state).
    Everything is scoped under .rollout-view so the global form/input/.primary styles from App.css
-   (made for the sign-in form) do not leak in. */
+   (made for the sign-in form) do not leak in. Colours are tokens from index.css. */
 
 .rollout-view { display: grid; gap: 1.25rem; }
 
-.rollout-back { margin: 0; font-size: .9rem; }
-.rollout-back a { color: #4b2d86; font-weight: 650; text-decoration: none; }
-.rollout-back a:hover { text-decoration: underline; }
+.rollout-back { margin: 0; font: .82rem var(--font-mono); }
+.rollout-back a { color: var(--text-2); font-weight: 600; text-decoration: none; transition: color .15s; }
+.rollout-back a:hover { color: var(--cyan); }
 
 .rollout-key {
   display: inline-block;
   margin-bottom: .5rem;
-  padding: .1rem .5rem;
+  padding: .12rem .55rem;
+  border: 1px solid rgb(46 242 160 / .3);
   border-radius: .35rem;
-  background: #ffffff1f;
-  color: #ebe2fa;
-  font-size: .85rem;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: .82rem;
   overflow-wrap: anywhere;
 }
 
-.rollout-heading-plain { margin: 0 0 .75rem; font-size: 1.15rem; letter-spacing: -.02em; }
+.rollout-heading-plain { margin: 0 0 .75rem; font-size: 1.1rem; letter-spacing: -.02em; }
 
 .rollout-view form { display: block; margin-top: 0; }
 .rollout-view label { margin: 0; }
 .rollout-view input { margin-bottom: 0; }
 .rollout-view .primary { width: auto; margin-top: 0; }
 .rollout-view button:disabled { cursor: not-allowed; }
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-}
 
 /* ---- percentage cards ---- */
 .env-grid {
@@ -44,42 +36,51 @@
 }
 
 .env-card {
+  position: relative;
   padding: 1.1rem 1.2rem 1.2rem;
-  border: 1px solid #e3e0ec;
-  border-radius: .9rem;
-  background: #fff;
-  box-shadow: 0 10px 28px #24264d0a;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  box-shadow: var(--shadow);
+  transition: border-color .2s, transform .25s var(--ease);
+  animation: rise .5s var(--ease) backwards;
 }
+.env-card:nth-child(2) { animation-delay: 70ms; }
+.env-card:nth-child(3) { animation-delay: 140ms; }
+.env-card:hover { border-color: var(--line-strong); transform: translateY(-2px); }
+.env-card::before { content: ''; position: absolute; left: 1.2rem; right: 1.2rem; top: -1px; height: 1px; background: linear-gradient(90deg, var(--accent), transparent); opacity: .7; }
 
 .env-card-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
-.env-card-head h3 { margin: 0; font-size: 1rem; }
+.env-card-head h3 { margin: 0; font: 700 .85rem var(--font-mono); text-transform: uppercase; letter-spacing: .1em; color: var(--text-2); }
 
 .env-card-big {
-  margin: .6rem 0 .25rem;
-  font-size: 2.4rem;
-  font-weight: 750;
-  letter-spacing: -.04em;
+  margin: .55rem 0 .3rem;
+  font: 700 2.6rem/1.05 var(--font-mono);
+  letter-spacing: -.05em;
   font-variant-numeric: tabular-nums;
-  line-height: 1.1;
+  color: var(--text);
+  text-shadow: 0 0 24px rgb(46 242 160 / .25);
 }
-.env-card-big span { margin-left: .1rem; font-size: 1.2rem; color: #6c6880; }
+.env-card-big span { margin-left: .1rem; font-size: 1.2rem; color: var(--text-3); }
 
 .env-card input[type='range'] {
   width: 100%;
   min-height: 0;
   padding: 0;
   border: 0;
-  accent-color: #5943c4;
+  background: transparent;
+  accent-color: var(--accent);
+  box-shadow: none;
 }
 
 .env-card-row { display: flex; align-items: center; gap: .5rem; margin-top: .6rem; }
-.env-card-row input[type='number'] { width: 6.5rem; min-height: 2.5rem; }
-.env-card-row input[aria-invalid='true'] { border-color: #c2414f; }
-.env-card-row .env-save { margin-left: auto; min-height: 2.5rem; }
+.env-card-row input[type='number'] { width: 6.5rem; min-height: 2.4rem; font-family: var(--font-mono); }
+.env-card-row input[aria-invalid='true'] { border-color: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
+.env-card-row .env-save { margin-left: auto; min-height: 2.4rem; }
 
-.env-note { margin: .6rem 0 0; font-size: .83rem; color: #585469; }
-.env-note-ok { color: #146248; }
-.env-note-error { color: #902633; }
+.env-note { margin: .6rem 0 0; font-size: .8rem; color: var(--text-2); }
+.env-note-ok { color: var(--accent); }
+.env-note-error { color: var(--danger); }
 
 /* ---- rules and preview ---- */
 .rollout-section { padding: 1.2rem 1.25rem 1.25rem; }
@@ -91,55 +92,53 @@
   justify-content: space-between;
   gap: .75rem 1rem;
 }
-.rollout-section-head h2 { margin: 0; font-size: 1.15rem; letter-spacing: -.02em; }
-.rollout-section-head p { margin: .25rem 0 0; color: #585469; font-size: .9rem; max-width: 36rem; }
+.rollout-section-head h2 { margin: 0; font-size: 1.1rem; letter-spacing: -.02em; }
+.rollout-section-head p { margin: .25rem 0 0; color: var(--text-2); font-size: .88rem; max-width: 36rem; }
 
 .rollout-view .rule-form { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
-.rule-form input { flex: 1 1 12rem; min-height: 2.6rem; }
-.rule-form select {
-  min-height: 2.6rem;
-  padding: .45rem .6rem;
-  border: 1px solid #8d95aa;
-  border-radius: .5rem;
-  background: #fff;
-  font: inherit;
-}
-.rule-form .primary { min-height: 2.6rem; }
+.rule-form input { flex: 1 1 12rem; min-height: 2.5rem; font-family: var(--font-mono); font-size: .88rem; }
+.rule-form select { min-height: 2.5rem; }
+.rule-form .primary { min-height: 2.5rem; }
 .rule-note { margin-top: .5rem; }
 
-.rule-list { list-style: none; margin: 1rem 0 0; padding: 0; border-top: 1px solid #ece9f2; }
+.rule-list { list-style: none; margin: 1rem 0 0; padding: 0; border-top: 1px solid var(--line); }
 .rule-list li {
   display: flex;
   align-items: center;
   gap: .75rem;
   padding: .6rem 0;
-  border-bottom: 1px solid #ece9f2;
+  border-bottom: 1px solid var(--line);
+  animation: rise .3s var(--ease) backwards;
 }
 .rule-list code { overflow-wrap: anywhere; }
 .rule-list .flag-button { margin-left: auto; }
 
 .rule-kind {
-  padding: .1rem .5rem;
+  padding: .1rem .55rem;
   border-radius: 1rem;
-  font-size: .78rem;
-  font-weight: 700;
+  font: 700 .7rem/1.5 var(--font-mono);
   text-transform: uppercase;
-  letter-spacing: .03em;
+  letter-spacing: .08em;
 }
-.rule-allow { background: #e2f5eb; color: #146248; }
-.rule-block { background: #fde7ea; color: #902633; }
+.rule-allow { border: 1px solid rgb(46 242 160 / .35); background: var(--accent-soft); color: var(--accent); }
+.rule-block { border: 1px solid var(--danger-line); background: var(--danger-soft); color: var(--danger); }
 
 .preview-result {
   margin-top: 1rem;
   padding: .9rem 1rem;
-  border-radius: .7rem;
-  border: 1px solid #e3e0ec;
-  background: #f7f6fa;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--off);
+  border-radius: .6rem;
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: .85rem;
+  animation: rise .3s var(--ease) both;
 }
-.preview-on { border-color: #b9e3cc; background: #f0faf4; }
+.preview-on { border-left-color: var(--accent); background: linear-gradient(90deg, var(--accent-soft), var(--bg) 60%); }
 .preview-result p { margin: 0; }
-.preview-result p + p { margin-top: .3rem; color: #585469; font-size: .9rem; }
+.preview-result p + p { margin-top: .3rem; color: var(--text-2); }
 .preview-answer { font-weight: 700; }
+.preview-on .preview-answer { color: var(--accent); }
 .preview-bucket { font-variant-numeric: tabular-nums; }
 
 @media (max-width: 34rem) {
@@ -150,11 +149,12 @@
 .rollout-manage {
   display: inline-block;
   margin-top: 1.1rem;
-  padding: .5rem .85rem;
-  border-radius: .5rem;
-  background: #5943c4;
-  color: #fff;
-  font-weight: 650;
+  padding: .5rem .9rem;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
   text-decoration: none;
+  transition: box-shadow .25s, background-color .2s;
 }
-.rollout-manage:hover { background: #4833a7; }
+.rollout-manage:hover { background: var(--accent-strong); box-shadow: 0 8px 24px -8px var(--accent-glow); }
