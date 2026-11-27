@@ -203,6 +203,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   animation: sheen 6s linear infinite;
 }
 .banner-sale { background: #000; color: var(--lime); }
+.banner-ship { background: linear-gradient(90deg, #0f766e, #14b8a6, #0f766e); background-size: 200% 100%; }
 @keyframes sheen { to { background-position: -200% 0; } }
 
 /* ---------- header (glass, sticky) ---------- */
