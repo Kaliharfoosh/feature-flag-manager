@@ -125,15 +125,35 @@ async function monitoring(teamId, hours, db = pool) {
     window,
   );
 
-  // One point per bucket, including empty ones, so the chart has no holes. Buckets are hourly,
-  // except in the 1-hour window: 5 minutes, so a burst of attacks shows its shape.
-  const bucketMinutes = hours <= 1 ? 5 : 60;
-  const buckets = (hours * 60) / bucketMinutes;
+  // Security events that belong to NO team: a failed login with an email that does not exist,
+  // a failed bot check or a server error from someone not signed in. Without this, credential
+  // stuffing with made-up emails would never show on any dashboard. Counts only: no IPs or
+  // details, because these requests could come from anyone (including another team's users).
+  const unattributed = db.query(
+    `SELECT
+       count(*) FILTER (WHERE action = 'login.failed')::int     AS failed_logins,
+       count(*) FILTER (WHERE action = 'bot_check.failed')::int AS bot_check_failures,
+       count(*) FILTER (WHERE action = 'server.error')::int     AS server_errors
+     FROM audit_events
+     WHERE team_id IS NULL AND category = 'security' AND at > now() - make_interval(hours => $1)`,
+    [hours],
+  );
+
+  // One point per bucket, including empty ones, so the chart has no holes. 5-minute buckets for
+  // 1 hour (a burst shows its shape), hourly for 24 hours, 6-hourly for 7 days (28 readable
+  // columns instead of 168 hair-thin ones).
+  // In the series, a login refused by the lockout counts as a failed login only, and
+  // rate_limited is the API-key limiter (rate_limit.hit), so a stacked column never counts one
+  // request twice. (The rateLimited TOTAL above includes both kinds.)
+  const bucketMinutes = hours <= 1 ? 5 : hours <= 24 ? 60 : 360;
+  const buckets = Math.ceil((hours * 60) / bucketMinutes);
   const series = db.query(
     `SELECT h.hour,
             count(e.id) FILTER (WHERE e.action = 'login.failed')::int  AS failed_logins,
             count(e.id) FILTER (WHERE e.action = 'access.denied')::int AS forbidden,
-            count(e.id) FILTER (WHERE e.action = 'server.error')::int  AS server_errors
+            count(e.id) FILTER (WHERE e.action = 'server.error')::int  AS server_errors,
+            count(e.id) FILTER (WHERE e.action = 'bot_check.failed')::int AS bot_check_failures,
+            count(e.id) FILTER (WHERE e.action = 'rate_limit.hit')::int   AS rate_limited
        FROM generate_series(
               date_bin(make_interval(mins => $2), now(), timestamptz '2000-01-01 00:00:00+00') - make_interval(mins => $2 * ($3 - 1)),
               date_bin(make_interval(mins => $2), now(), timestamptz '2000-01-01 00:00:00+00'),
@@ -145,7 +165,8 @@ async function monitoring(teamId, hours, db = pool) {
     [teamId, bucketMinutes, buckets],
   );
 
-  const [t, ips, ends, s] = await Promise.all([totals, topIps, topEndpoints, series]);
+  const [t, ips, ends, u, s] = await Promise.all([totals, topIps, topEndpoints, unattributed, series]);
+  const n = u.rows[0];
   const r = t.rows[0];
   return {
     hours,
@@ -158,11 +179,14 @@ async function monitoring(teamId, hours, db = pool) {
     alertFailures: r.alert_failures,
     topFailedLoginIps: ips.rows,
     topRefusedEndpoints: ends.rows,
+    unattributed: { failedLogins: n.failed_logins, botCheckFailures: n.bot_check_failures, serverErrors: n.server_errors },
     series: s.rows.map((row) => ({
       hour: row.hour,
       failedLogins: row.failed_logins,
       forbidden: row.forbidden,
       serverErrors: row.server_errors,
+      botCheckFailures: row.bot_check_failures,
+      rateLimited: row.rate_limited,
     })),
   };
 }

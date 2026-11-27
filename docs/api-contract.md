@@ -421,10 +421,12 @@ An audit event as returned by the API:
   "failedLogins": 12, "botCheckFailures": 0, "forbidden": 3, "serverErrors": 0, "rateLimited": 2, "alertFailures": 1,
   "topFailedLoginIps": [ { "ip": "203.0.113.9", "count": 11 } ],
   "topRefusedEndpoints": [ { "endpoint": "GET /api/v1/audit/export.csv", "count": 3 } ],
-  "series": [ { "hour": "2026-11-13T13:00:00.000Z", "failedLogins": 11, "forbidden": 1, "serverErrors": 0 } ] }
+  "unattributed": { "failedLogins": 7, "botCheckFailures": 2, "serverErrors": 0 },
+  "series": [ { "hour": "2026-11-13T13:00:00.000Z", "failedLogins": 11, "forbidden": 1, "serverErrors": 0, "botCheckFailures": 0, "rateLimited": 0 } ] }
 ```
 
-- `series` has one point per bucket, empty ones included: hourly (`bucketMinutes: 60`, 24 or 168 points), except `hours=1`, which uses 5-minute buckets (`bucketMinutes: 5`, 12 points) so a burst of attacks shows its shape. `hour` is the bucket's start.
+- `series` has one point per bucket, empty ones included: 5-minute buckets for `hours=1` (`bucketMinutes: 5`, 12 points), hourly up to 24 hours (`bucketMinutes: 60`), 6-hourly above that (`bucketMinutes: 360`, 28 points for 7 days). `hour` is the bucket's start. In the series a login refused by the lockout counts only as `failedLogins`, and `rateLimited` is the API-key limit (`rate_limit.hit`), so a stacked column never counts one request twice; the `rateLimited` total includes both.
+- `unattributed`: security events that belong to no team (a failed login with an email that does not exist, a failed bot check or a server error from someone not signed in). Counts only, no IPs: these requests could come from anyone.
 - `topRefusedEndpoints`: the six method + path pairs most often refused with 403 (`access.denied`), this team only.
 - Errors: `400`, `401`, `403`.
 

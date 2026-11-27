@@ -150,6 +150,8 @@
 .series-1 { background: var(--series-1); }
 .series-2 { background: var(--series-2); }
 .series-3 { background: var(--series-3); }
+.series-4 { background: var(--series-4); }
+.series-5 { background: var(--series-5); }
 
 .hour-chart-plot {
   position: relative;
@@ -354,3 +356,16 @@
 .bar-list li:hover .bar-fill { filter: brightness(1.25); }
 .bar-list li:hover .bar-label { color: var(--text); }
 @keyframes bar-in { from { transform: scaleX(0); } }
+
+/* security events that belong to no team (unknown emails, anonymous bots) */
+.unattributed {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem 1.25rem;
+  padding: .7rem 1.15rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: .82rem;
+}
+.unattributed-title { color: var(--text); font: 700 .72rem var(--font-mono); text-transform: uppercase; letter-spacing: .1em; }
+.unattributed b { margin-left: .25rem; color: var(--amber); font: 700 .85rem var(--font-mono); }
+.unattributed-note { flex-basis: 100%; color: var(--text-3); font-size: .72rem; }

@@ -31,11 +31,14 @@ const TILES = [
   ['alertFailures', 'GitHub issues failed'],
 ]
 
-// Chart series in a fixed order; the colours are the validated categorical slots 1-3.
+// Chart series in a fixed order; the colours are the validated categorical slots 1-5
+// (index.css: lightness band, CVD and normal-vision separation all pass on the dark surface).
 const SERIES = [
   ['failedLogins', 'Failed logins'],
   ['forbidden', 'Refused (403)'],
   ['serverErrors', 'Server errors'],
+  ['botCheckFailures', 'Bot checks failed'],
+  ['rateLimited', 'API key rate limited'],
 ]
 
 const RULES = {
@@ -96,7 +99,14 @@ function BarList({ title, rows, empty, mono = false }) {
 }
 
 // How worried to be, from the numbers in this window. Shown with an icon and a word, never colour alone.
-function threat(data) {
+function threat(team) {
+  // Attacks that belong to no team (unknown emails, anonymous bots) count too.
+  const data = {
+    ...team,
+    failedLogins: team.failedLogins + (team.unattributed?.failedLogins ?? 0),
+    botCheckFailures: team.botCheckFailures + (team.unattributed?.botCheckFailures ?? 0),
+    serverErrors: team.serverErrors + (team.unattributed?.serverErrors ?? 0),
+  }
   if (data.failedLogins >= 10 || data.rateLimited > 0 || data.serverErrors >= 5) return ['high', '▲', 'High', 'brute force or rate limiting in progress']
   if (data.failedLogins >= 3 || data.forbidden >= 5 || data.botCheckFailures >= 3) return ['elevated', '◆', 'Elevated', 'repeated refusals: someone is probing']
   return ['normal', '●', 'Normal', 'nothing unusual']
@@ -123,7 +133,7 @@ function HourlyChart({ series, bucketMinutes = 60 }) {
 
   return (
     <figure className="hour-chart">
-      <figcaption>Security events per {bucketMinutes < 60 ? `${bucketMinutes} minutes` : 'hour'}</figcaption>
+      <figcaption>Security events per {bucketMinutes < 60 ? `${bucketMinutes} minutes` : bucketMinutes === 60 ? 'hour' : `${bucketMinutes / 60} hours`}</figcaption>
       <ul className="chart-legend" aria-label="Legend">
         {SERIES.map(([key, label], i) => (
           <li key={key}><span className={`swatch series-${i + 1}`} aria-hidden="true" />{label}</li>
@@ -424,6 +434,15 @@ function MonitoringDashboard({ session }) {
                 <div key={key} className="stat-tile"><dt>{label}</dt><dd>{data[key].toLocaleString('en')}</dd></div>
               ))}
             </dl>
+            {data.unattributed && (
+              <div className="unattributed" role="note">
+                <span className="unattributed-title">Not tied to any team</span>
+                <span>Failed logins with unknown emails <b>{data.unattributed.failedLogins}</b></span>
+                <span>Bot checks failed <b>{data.unattributed.botCheckFailures}</b></span>
+                <span>Server errors <b>{data.unattributed.serverErrors}</b></span>
+                <span className="unattributed-note">Counts only: these requests could come from anyone, so no IPs are shown.</span>
+              </div>
+            )}
             <div className="monitoring-grid">
               <HourlyChart series={data.series} bucketMinutes={data.bucketMinutes ?? 60} />
               <BarList
