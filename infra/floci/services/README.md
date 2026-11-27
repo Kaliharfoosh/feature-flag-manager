@@ -7,7 +7,7 @@ style: Git Bash, safe to run again, secrets never printed.
 |---|---|---|
 | `s2-lambdas.sh` | S2 Habiba | **all three Lambdas** (`ffm-flags-fn`, `ffm-eval-fn`, `ffm-audit-fn`), each with its own **secret**, **IAM role** and **log group**, plus **API Gateway** `ffm-http-api` routing every path to the right one, with a throttle on evaluations. S2's counted services: Lambda (`ffm-eval-fn`), API Gateway, Secrets Manager. |
 | `s1-….sh` | S1 Youssef | to come: S3 snapshots, KMS, EventBridge |
-| `s3-audit.sh` | S3 Ebrahim | the **alert outbox**: **SQS** `ffm-alerts-queue` + `ffm-alerts-dlq` (after 3 tries), processed by Lambda `ffm-alert-worker`; **CloudWatch** alarm `ffm-failed-logins`; **SNS** topic `ffm-ops-alerts` (+ `ffm-ops-inbox` queue subscribed, to show delivery). The GitHub token moves to `ffm/github-token`, readable only by the worker. Run it **after** `s2-lambdas.sh`. S3's counted services: SQS, CloudWatch, SNS. |
+| `s3-audit.sh` | S3 Ebrahim | the **alert outbox**: **SQS** `ffm-alerts-queue` + `ffm-alerts-dlq` (after 3 tries), processed by Lambda `ffm-alert-worker`; **CloudWatch** alarm `ffm-failed-logins`; **SNS** topic `ffm-ops-alerts` (+ `ffm-ops-inbox` queue subscribed, to show delivery). The GitHub token moves to `ffm/github-token`, readable only by the worker. Run it **after** `s2-lambdas.sh`. S3's counted services: SQS, CloudWatch, SNS, plus **EventBridge Scheduler** (`ffm-alert-sweeper` every 10 min, `ffm-daily-audit-summary` at 06:00 UTC) as a 4th. |
 
 S2 owns the Lambda setup and the API Gateway route table for the whole team, so S1 and S3 only add
 their own other services.
@@ -80,6 +80,11 @@ CloudWatch FFM/FailedLogins · Forbidden · BotCheckFailures · ServerErrors
    │ alarm ffm-failed-logins: FailedLogins ≥ 5 in 5 min
    ▼
 SNS ffm-ops-alerts ──► ffm-ops-inbox (SQS subscriber, to show delivery)
+   ▲
+   │ daily summary (all teams, counts only)
+EventBridge Scheduler ──(role ffm-scheduler-role)──► ffm-alert-worker
+   ffm-daily-audit-summary  cron(0 6 * * ? *)  {"task":"daily-summary"}
+   ffm-alert-sweeper        rate(10 minutes)   {"task":"sweep"}  ──► stuck alerts back on ffm-alerts-queue
 ```
 
 - The request only queues the alert id and answers (89 ms for a prod toggle, against about
@@ -102,6 +107,12 @@ SNS ffm-ops-alerts ──► ffm-ops-inbox (SQS subscriber, to show delivery)
   keeps only the team's alert ids (checked in the database) and releases the others untouched.
   Only `ffm-audit-fn` has `ALERTS_DLQ_URL` and the DLQ rights. Retry on a single alert is also
   queued on Floci (`202`), because only the worker can read the GitHub token.
+- **Scheduler:** the sweeper puts alerts back on the queue that never reached the worker (still
+  `open` 2 minutes after they were raised, or `sending` for over 2 minutes). `failed` ones are left
+  to SQS and the DLQ. It runs every **10 minutes, not every minute**: Neon's free tier suspends the
+  database after 5 idle minutes, and a job more often than that would keep it awake (and using
+  compute hours) all day. The daily summary posts the last 24 hours for all teams to
+  `ffm-ops-alerts` as numbers only (no emails, IPs or flag names).
 - `rate_limit.hit` has no metric here: `FFM/RateLimitHits` is S2's (Habiba's) bonus item.
 - `s2-lambdas.sh` keeps `ALERTS_QUEUE_URL` and `METRICS_NAMESPACE` when it redeploys, and
   `s3-audit.sh` adds the permissions as their own policies (`ffm-alerts-send`, `ffm-metrics-put`),
@@ -112,6 +123,8 @@ bash infra/floci/services/s3-audit.sh       # needs DATABASE_URL_APP, GITHUB_TOK
 source infra/floci/services/_lib.sh
 awsl sqs get-queue-attributes --queue-url http://floci:4566/000000000000/ffm-alerts-dlq --attribute-names ApproximateNumberOfMessages
 awsl logs tail /aws/lambda/ffm-alert-worker
+awsl lambda invoke --function-name ffm-alert-worker --cli-binary-format raw-in-base64-out --payload '{"task":"daily-summary"}' out.json   # run the summary now
+awsl scheduler list-schedules --query 'Schedules[].[Name,State]' --output text
 awsl cloudwatch describe-alarm-history --alarm-name ffm-failed-logins --history-item-type StateUpdate
 awsl sqs receive-message --queue-url http://floci:4566/000000000000/ffm-ops-inbox   # the alarm's SNS message
 ```

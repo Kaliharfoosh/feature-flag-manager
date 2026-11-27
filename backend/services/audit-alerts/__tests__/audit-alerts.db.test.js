@@ -145,6 +145,36 @@ describeDb('alerts and audit queries against Postgres', () => {
     expect((await github.listAlerts(teamId, client))[0]).toMatchObject({ status: 'sent', githubIssueNumber: 5 });
   });
 
+  test('daily summary: counts every team, security and production changes (scheduler job)', async () => {
+    const before = await query.platformSummary(24, client);
+    const r = req('admin@it.test', teamId);
+    await audit.record(client, r, { action: 'flag.toggled', details: { env: 'prod' } }); // + alert
+    await audit.record(client, req('dev@it.test', otherTeamId), { action: 'rollout.updated', details: { env: 'staging' } });
+    await audit.record(client, r, { category: 'security', action: 'login.failed', details: { rateLimited: true } });
+    await audit.record(client, r, { category: 'security', action: 'access.denied' });
+    const after = await query.platformSummary(24, client);
+    const delta = Object.fromEntries(Object.keys(after).map((k) => [k, after[k] - before[k]]));
+    expect(delta).toMatchObject({
+      changes: 2, prodChanges: 1, failedLogins: 1, rateLimited: 1, forbidden: 1, serverErrors: 0, alertsRaised: 1,
+    });
+  });
+
+  test('sweeper: finds alerts left "open" or stuck in "sending", never "failed" or new ones', async () => {
+    const r = req('admin@it.test', teamId);
+    const raise = async () => (await audit.record(client, r, { action: 'flag.toggled', details: { env: 'prod' } })).alert.id;
+    const oldOpen = await raise();
+    const newOpen = await raise();
+    const oldSending = await raise();
+    const oldFailed = await raise();
+    await client.query("UPDATE alerts SET created_at = now() - interval '10 minutes' WHERE id = ANY($1::uuid[])", [[oldOpen, oldSending, oldFailed]]);
+    await client.query("UPDATE alerts SET status = 'sending', updated_at = now() - interval '10 minutes' WHERE id = $1", [oldSending]);
+    await client.query("UPDATE alerts SET status = 'failed' WHERE id = $1", [oldFailed]);
+    const ids = await github.stuckAlertIds(500, client);
+    expect(ids).toEqual(expect.arrayContaining([oldOpen, oldSending]));
+    expect(ids).not.toContain(newOpen);
+    expect(ids).not.toContain(oldFailed);
+  });
+
   test('export returns the same filtered events as the list', async () => {
     await audit.record(client, req('dev@it.test', teamId), { action: 'flag.created', details: { name: '=HYPERLINK("x")' } });
     const events = await query.exportEvents(teamId, schema.parseAuditExport({ category: 'change' }), client);

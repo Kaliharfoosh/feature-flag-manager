@@ -9,8 +9,11 @@ set -euo pipefail
 #                    shared/metrics.js) and alarm ffm-failed-logins: FailedLogins >= 5 in 5 min -> SNS.
 #   Amazon SNS       ffm-ops-alerts: receives the alarm (and S1's prod-change events). The queue
 #                    ffm-ops-inbox is subscribed so delivery can be shown without real email.
-#   (plumbing, not counted) Lambda ffm-alert-worker, IAM role ffm-alert-worker-role,
-#   Secrets Manager ffm/worker-db + ffm/github-token (the GitHub token: only the worker reads it).
+#   Amazon EventBridge Scheduler (4th service): ffm-alert-sweeper every 10 minutes puts alerts that
+#                    never reached the worker back on the queue; ffm-daily-audit-summary at 06:00 UTC
+#                    posts yesterday's counts (all teams, numbers only) to ffm-ops-alerts.
+#   (plumbing, not counted) Lambda ffm-alert-worker, IAM roles ffm-alert-worker-role and
+#   ffm-scheduler-role, Secrets Manager ffm/worker-db + ffm/github-token (only the worker reads it).
 #
 # Run from Git Bash, Floci running, AFTER s2-lambdas.sh (it adds the queue to those functions):
 #   bash infra/floci/services/s3-audit.sh
@@ -36,6 +39,13 @@ ALARM="ffm-failed-logins"
 NAMESPACE="FFM"        # CloudWatch metrics from shared/metrics.js
 PRODUCERS=(ffm-flags-fn ffm-eval-fn ffm-audit-fn)   # every function that can raise an alert
 DLQ_READER="ffm-audit-fn"                            # the monitoring page: counts and replays the DLQ
+SCHEDULER_ROLE="ffm-scheduler-role"
+# Every 10 minutes, not every minute: Neon's free tier suspends the database after 5 idle minutes,
+# and a job more often than that would keep it awake (and billed) all day.
+SCHEDULES=(
+  "ffm-alert-sweeper|rate(10 minutes)|{\"task\":\"sweep\"}"
+  "ffm-daily-audit-summary|cron(0 6 * * ? *)|{\"task\":\"daily-summary\"}"
+)
 
 TOPIC_ARN="arn:aws:sns:${REGION}:${ACCOUNT_ID}:${TOPIC}"
 QUEUE_ARN="arn:aws:sqs:${REGION}:${ACCOUNT_ID}:${QUEUE}"
@@ -52,7 +62,7 @@ queue_url() { awsl sqs get-queue-url --queue-name "$1" --query QueueUrl --output
 count() { awsl sqs get-queue-attributes --queue-url "$1" --attribute-names ApproximateNumberOfMessages \
   --query Attributes.ApproximateNumberOfMessages --output text; }
 
-echo "=== [0/7] Checks ==="
+echo "=== [0/8] Checks ==="
 command -v aws >/dev/null || { echo "AWS CLI not found. Install it first."; exit 1; }
 awsl sts get-caller-identity >/dev/null 2>&1 \
   || { echo "Floci is not answering on ${ENDPOINT}. Start it:  docker compose -f infra/floci/docker-compose.yml up -d"; exit 1; }
@@ -62,17 +72,17 @@ node --env-file="$ENV_FILE" -e "process.exit(process.env.DATABASE_URL_APP ? 0 : 
 if ! node --env-file="$ENV_FILE" -e "process.exit(process.env.GITHUB_TOKEN && process.env.GITHUB_REPO ? 0 : 1)"; then
   echo "  WARNING: GITHUB_TOKEN / GITHUB_REPO missing in ${ENV_FILE}: alerts will fail and end in ${DLQ}."
 fi
-echo "[0/7] done"
+echo "[0/8] done"
 
-echo "=== [1/7] Build the Lambda code (build/lambda.zip, the same zip as the other functions) ==="
+echo "=== [1/8] Build the Lambda code (build/lambda.zip, the same zip as the other functions) ==="
 if [ "${SKIP_BUILD:-}" = "1" ] && [ -f build/lambda.zip ]; then
   echo "  (SKIP_BUILD=1: using the existing build/lambda.zip)"
 else
   node infra/floci/build-lambda.js
 fi
-echo "[1/7] done"
+echo "[1/8] done"
 
-echo "=== [2/7] SNS: ${TOPIC} (+ ${INBOX} subscribed, to show delivery) ==="
+echo "=== [2/8] SNS: ${TOPIC} (+ ${INBOX} subscribed, to show delivery) ==="
 awsl sns create-topic --name "$TOPIC" >/dev/null
 awsl sqs create-queue --queue-name "$INBOX" >/dev/null
 if [ -z "$(awsl sns list-subscriptions-by-topic --topic-arn "$TOPIC_ARN" \
@@ -81,9 +91,9 @@ if [ -z "$(awsl sns list-subscriptions-by-topic --topic-arn "$TOPIC_ARN" \
 fi
 echo "  topic       ${TOPIC_ARN}"
 echo "  subscriber  ${INBOX} (SQS)"
-echo "[2/7] done"
+echo "[2/8] done"
 
-echo "=== [3/7] SQS: ${QUEUE} -> ${DLQ} after ${MAX_TRIES} tries ==="
+echo "=== [3/8] SQS: ${QUEUE} -> ${DLQ} after ${MAX_TRIES} tries ==="
 awsl sqs create-queue --queue-name "$DLQ" --attributes MessageRetentionPeriod=1209600 >/dev/null
 cat > "$TMP/queue-attributes.json" <<JSON
 { "VisibilityTimeout": "${VISIBILITY}",
@@ -104,7 +114,7 @@ node -e "
       Action: ['sqs:ReceiveMessage', 'sqs:DeleteMessage', 'sqs:ChangeMessageVisibility', 'sqs:GetQueueAttributes'],
       Resource: queueArn } ] };
   require('fs').writeFileSync('$TMP/queue-policy.json', JSON.stringify({ Policy: JSON.stringify(policy) }));
-" "$ACCOUNT_ID" "$REGION" "$QUEUE_ARN" "$WORKER_ROLE" ffm-flags-role ffm-eval-role ffm-audit-role
+" "$ACCOUNT_ID" "$REGION" "$QUEUE_ARN" "$WORKER_ROLE" ffm-flags-role ffm-eval-role ffm-audit-role "$WORKER_ROLE"
 awsl sqs set-queue-attributes --queue-url "$QUEUE_URL" --attributes "file://$TMP/queue-policy.json"
 # DLQ policy: only the audit function (monitoring page) may read, replay or delete dead letters.
 node -e "
@@ -118,9 +128,9 @@ node -e "
 awsl sqs set-queue-attributes --queue-url "$DLQ_URL" --attributes "file://$TMP/dlq-queue-policy.json"
 echo "  queue      ${QUEUE_URL} (visibility ${VISIBILITY} s, DLQ after ${MAX_TRIES})"
 echo "  DLQ         ${DLQ_URL} (kept 14 days)"
-echo "[3/7] done"
+echo "[3/8] done"
 
-echo "=== [4/7] Secrets: ${DB_SECRET}, ${GH_SECRET} (only ${WORKER_ROLE} may read them) ==="
+echo "=== [4/8] Secrets: ${DB_SECRET}, ${GH_SECRET} (only ${WORKER_ROLE} may read them) ==="
 put_secret() { # name description json-file
   if awsl secretsmanager describe-secret --secret-id "$1" >/dev/null 2>&1; then
     awsl secretsmanager put-secret-value --secret-id "$1" --secret-string "file://$3" >/dev/null
@@ -145,9 +155,9 @@ node --env-file="$ENV_FILE" -e "
 "
 put_secret "$DB_SECRET" "${WORKER}: the ffm_app database login" "$TMP/db.json"
 put_secret "$GH_SECRET" "${WORKER}: fine-grained GitHub token (Issues: write) + repo" "$TMP/gh.json"
-echo "[4/7] done"
+echo "[4/8] done"
 
-echo "=== [5/7] Lambda ${WORKER} (triggered by ${QUEUE}, batch size 1) ==="
+echo "=== [5/8] Lambda ${WORKER} (triggered by ${QUEUE}, batch size 1) ==="
 ok awsl logs create-log-group --log-group-name "$WORKER_LOGS"
 awsl logs put-retention-policy --log-group-name "$WORKER_LOGS" --retention-in-days 7
 ok awsl iam create-role --role-name "$WORKER_ROLE" \
@@ -161,13 +171,17 @@ cat > "$TMP/worker-policy.json" <<JSON
   { "Sid": "ConsumeOnlyTheAlertQueue", "Effect": "Allow",
     "Action": ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:ChangeMessageVisibility", "sqs:GetQueueAttributes"],
     "Resource": "${QUEUE_ARN}" },
+  { "Sid": "SweeperRequeuesOnlyToTheAlertQueue", "Effect": "Allow", "Action": "sqs:SendMessage",
+    "Resource": "${QUEUE_ARN}" },
+  { "Sid": "DailySummaryOnlyToTheOpsTopic", "Effect": "Allow", "Action": "sns:Publish",
+    "Resource": "${TOPIC_ARN}" },
   { "Sid": "WriteOnlyItsOwnLogs", "Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
     "Resource": "arn:aws:logs:${REGION}:${ACCOUNT_ID}:log-group:${WORKER_LOGS}:*" } ] }
 JSON
 awsl iam put-role-policy --role-name "$WORKER_ROLE" --policy-name "${WORKER}-access" \
   --policy-document "file://$TMP/worker-policy.json"
 echo "  role        ${WORKER_ROLE}"
-WORKER_ENV="Variables={SECRET_ID=${DB_SECRET},GITHUB_SECRET_ID=${GH_SECRET}}"
+WORKER_ENV="Variables={SECRET_ID=${DB_SECRET},GITHUB_SECRET_ID=${GH_SECRET},ALERTS_QUEUE_URL=${QUEUE_URL},OPS_TOPIC_ARN=${TOPIC_ARN}}"
 if awsl lambda get-function --function-name "$WORKER" >/dev/null 2>&1; then
   awsl lambda update-function-code --function-name "$WORKER" --zip-file fileb://build/lambda.zip >/dev/null
   awsl lambda wait function-updated --function-name "$WORKER" 2>/dev/null || true
@@ -188,9 +202,9 @@ if [ -z "$(awsl lambda list-event-source-mappings --function-name "$WORKER" \
     --batch-size 1 >/dev/null
 fi
 echo "  trigger     ${QUEUE} -> ${WORKER}"
-echo "[5/7] done"
+echo "[5/8] done"
 
-echo "=== [6/7] Producers: the three functions may queue alerts and send metrics ==="
+echo "=== [6/8] Producers: the three functions may queue alerts and send metrics ==="
 # A separate inline policy and one extra setting, so s2-lambdas.sh re-runs keep them
 # (it rewrites only its own "<fn>-access" policy, and it keeps ALERTS_QUEUE_URL and METRICS_NAMESPACE).
 cat > "$TMP/send-policy.json" <<JSON
@@ -239,16 +253,45 @@ for fn in "${PRODUCERS[@]}"; do
   awsl lambda update-function-configuration --function-name "$fn" --environment "file://$TMP/env.json" >/dev/null
   echo "  ${fn}: ALERTS_QUEUE_URL + METRICS_NAMESPACE${dlq_url:+ + ALERTS_DLQ_URL} set, role ${role##*/} may use them"
 done
-echo "[6/7] done"
+echo "[6/8] done"
 
-echo "=== [7/7] CloudWatch alarm ${ALARM}: FFM/FailedLogins >= 5 in 5 minutes -> ${TOPIC} ==="
+echo "=== [7/8] CloudWatch alarm ${ALARM}: FFM/FailedLogins >= 5 in 5 minutes -> ${TOPIC} ==="
 awsl cloudwatch put-metric-alarm --alarm-name "$ALARM" \
   --alarm-description "5 or more failed logins in 5 minutes (S3 monitoring)" \
   --namespace FFM --metric-name FailedLogins --statistic Sum --period 300 --evaluation-periods 1 \
   --threshold 5 --comparison-operator GreaterThanOrEqualToThreshold --treat-missing-data notBreaching \
   --alarm-actions "$TOPIC_ARN" --ok-actions "$TOPIC_ARN"
 echo "  alarm       ${ALARM} -> ${TOPIC}"
-echo "[7/7] done"
+echo "[7/8] done"
+
+echo "=== [8/8] EventBridge Scheduler: the sweeper and the daily summary run ${WORKER} ==="
+# The scheduler wears its own role, which may invoke this one function and nothing else.
+cat > "$TMP/scheduler-trust.json" <<JSON
+{ "Version": "2012-10-17", "Statement": [ { "Effect": "Allow",
+  "Principal": { "Service": "scheduler.amazonaws.com" }, "Action": "sts:AssumeRole" } ] }
+JSON
+ok awsl iam create-role --role-name "$SCHEDULER_ROLE" --assume-role-policy-document "file://$TMP/scheduler-trust.json" \
+  --description "EventBridge Scheduler: invoke ${WORKER} only"
+cat > "$TMP/scheduler-policy.json" <<JSON
+{ "Version": "2012-10-17", "Statement": [ { "Sid": "InvokeOnlyTheAlertWorker", "Effect": "Allow",
+  "Action": "lambda:InvokeFunction", "Resource": "arn:aws:lambda:${REGION}:${ACCOUNT_ID}:function:${WORKER}" } ] }
+JSON
+awsl iam put-role-policy --role-name "$SCHEDULER_ROLE" --policy-name ffm-scheduler-invoke \
+  --policy-document "file://$TMP/scheduler-policy.json"
+echo "  role        ${SCHEDULER_ROLE} (lambda:InvokeFunction on ${WORKER} only)"
+for entry in "${SCHEDULES[@]}"; do
+  IFS='|' read -r name expression input <<< "$entry"
+  node -e "
+    const [arn, role, input] = process.argv.slice(1);
+    require('fs').writeFileSync('$TMP/target.json', JSON.stringify({ Arn: arn, RoleArn: role, Input: input }));
+  " "arn:aws:lambda:${REGION}:${ACCOUNT_ID}:function:${WORKER}" "arn:aws:iam::${ACCOUNT_ID}:role/${SCHEDULER_ROLE}" "$input"
+  verb=create-schedule
+  awsl scheduler get-schedule --name "$name" >/dev/null 2>&1 && verb=update-schedule
+  awsl scheduler "$verb" --name "$name" --schedule-expression "$expression" \
+    --flexible-time-window Mode=OFF --target "file://$TMP/target.json" >/dev/null
+  echo "  schedule    ${name}: ${expression} -> ${input}"
+done
+echo "[8/8] done"
 
 echo "=== Self-test ==="
 FAILED=0
@@ -280,17 +323,40 @@ if [ "$(count "$QUEUE_URL")" = 0 ] && [ "$(count "$DLQ_URL")" = "$DLQ_BEFORE" ];
 else
   echo "  queue -> worker      FAILED: queue $(count "$QUEUE_URL"), DLQ $(count "$DLQ_URL") (was ${DLQ_BEFORE})"; FAILED=1
 fi
-# 3. SNS delivers to its subscriber.
+# 3. The daily summary job, run now: worker -> database -> SNS -> its subscriber queue.
 INBOX_URL=$(queue_url "$INBOX")
 awsl sqs purge-queue --queue-url "$INBOX_URL" 2>/dev/null || true
-awsl sns publish --topic-arn "$TOPIC_ARN" --subject "s3-audit self-test" --message "self-test" >/dev/null
+echo '{"task":"daily-summary"}' > "$TMP/summary.json"
+awsl lambda invoke --function-name "$WORKER" --cli-binary-format raw-in-base64-out --cli-read-timeout 120 \
+  --payload "file://$TMP/summary.json" "$TMP/out.json" > "$TMP/invoke.json"
 sleep 2
-if [ "$(count "$INBOX_URL")" -ge 1 ]; then
-  echo "  SNS -> ${INBOX}  ok"
+if ! grep -q FunctionError "$TMP/invoke.json" && \
+   awsl sqs receive-message --queue-url "$INBOX_URL" --max-number-of-messages 10 --query 'Messages[].Body' --output text \
+     | grep -q 'FFM daily audit summary'; then
+  echo "  summary -> SNS       ok: the daily summary reached ${INBOX}"
 else
-  echo "  SNS -> ${INBOX}  FAILED"; FAILED=1
+  echo "  summary -> SNS       FAILED: $(head -c 300 "$TMP/out.json")"; FAILED=1
 fi
 awsl sqs purge-queue --queue-url "$INBOX_URL" 2>/dev/null || true
+# 3b. The sweeper job, run now.
+echo '{"task":"sweep"}' > "$TMP/sweep.json"
+awsl lambda invoke --function-name "$WORKER" --cli-binary-format raw-in-base64-out --cli-read-timeout 120 \
+  --payload "file://$TMP/sweep.json" "$TMP/out.json" > "$TMP/invoke.json"
+if grep -q FunctionError "$TMP/invoke.json"; then
+  echo "  sweeper              FAILED: $(head -c 300 "$TMP/out.json")"; FAILED=1
+else
+  echo "  sweeper              ok: $(cat "$TMP/out.json")"
+fi
+# 3c. Both schedules point at the worker through the scheduler role.
+for entry in "${SCHEDULES[@]}"; do
+  IFS='|' read -r name _ <<< "$entry"
+  target=$(awsl scheduler get-schedule --name "$name" --query Target.Arn --output text 2>/dev/null || true)
+  if [ "$target" = "arn:aws:lambda:${REGION}:${ACCOUNT_ID}:function:${WORKER}" ]; then
+    echo "  schedule ${name}  ok"
+  else
+    echo "  schedule ${name}  FAILED"; FAILED=1
+  fi
+done
 # 4. The alarm is wired to the topic.
 if [ "$(awsl cloudwatch describe-alarms --alarm-names "$ALARM" --query 'MetricAlarms[0].AlarmActions[0]' --output text)" = "$TOPIC_ARN" ]; then
   echo "  alarm -> SNS         ok"
@@ -303,5 +369,5 @@ if [ "$FAILED" != 0 ]; then
   exit 1
 fi
 echo
-echo "S3 outbox ready. Queue ${QUEUE}, DLQ ${DLQ}, topic ${TOPIC}, alarm ${ALARM}."
+echo "S3 outbox ready. Queue ${QUEUE}, DLQ ${DLQ}, topic ${TOPIC}, alarm ${ALARM}, schedules ffm-alert-sweeper + ffm-daily-audit-summary."
 [ "$MISSING" = 0 ] || echo "Some producer functions were missing: run s2-lambdas.sh, then this script again."

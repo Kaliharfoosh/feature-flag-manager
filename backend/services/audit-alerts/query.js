@@ -150,4 +150,40 @@ async function monitoring(teamId, hours, db = pool) {
   };
 }
 
-module.exports = { listEvents, exportEvents, summary, monitoring, toApi, EXPORT_LIMIT };
+// Daily operations summary (EventBridge Scheduler -> ffm-alert-worker -> SNS ffm-ops-alerts).
+// All teams together, because it goes to the operators' topic, never to a team. Counts only:
+// no emails, IPs or flag names.
+async function platformSummary(hours = 24, db = pool) {
+  const { rows: [r] } = await db.query(
+    `SELECT
+       count(*) FILTER (WHERE action = 'login.failed')::int     AS failed_logins,
+       count(*) FILTER (WHERE action = 'bot_check.failed')::int AS bot_check_failures,
+       count(*) FILTER (WHERE action = 'access.denied')::int    AS forbidden,
+       count(*) FILTER (WHERE action = 'server.error')::int     AS server_errors,
+       count(*) FILTER (WHERE ${RATE_LIMITED})::int             AS rate_limited,
+       count(*) FILTER (WHERE category = 'change')::int         AS changes,
+       count(*) FILTER (WHERE category = 'change' AND details->>'env' = 'prod')::int AS prod_changes,
+       (SELECT count(*) FROM alerts WHERE created_at > now() - make_interval(hours => $1))::int AS alerts_raised,
+       (SELECT count(*) FROM alerts WHERE status = 'sent'
+          AND created_at > now() - make_interval(hours => $1))::int AS alerts_sent,
+       (SELECT count(*) FROM alerts WHERE status = 'failed')::int AS alerts_failed_now
+     FROM audit_events
+     WHERE at > now() - make_interval(hours => $1)`,
+    [hours],
+  );
+  return {
+    hours,
+    failedLogins: r.failed_logins,
+    botCheckFailures: r.bot_check_failures,
+    forbidden: r.forbidden,
+    serverErrors: r.server_errors,
+    rateLimited: r.rate_limited,
+    changes: r.changes,
+    prodChanges: r.prod_changes,
+    alertsRaised: r.alerts_raised,
+    alertsSent: r.alerts_sent,
+    alertsFailedNow: r.alerts_failed_now,
+  };
+}
+
+module.exports = { listEvents, exportEvents, summary, monitoring, platformSummary, toApi, EXPORT_LIMIT };

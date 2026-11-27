@@ -1,4 +1,5 @@
-// ffm-alert-worker (S3): the outbox processor. Triggered by SQS (ffm-alerts-queue, batch size 1).
+// ffm-alert-worker (S3): the outbox processor. Triggered by SQS (ffm-alerts-queue, batch size 1)
+// and by two EventBridge Scheduler schedules: the sweeper (every 10 min) and the daily summary.
 // Lambda handler = backend/lambdas/alert-worker.handler. Not behind API Gateway: no HTTP route.
 //
 // It reads TWO secrets on the first message, and its IAM role may read only these two:
@@ -29,8 +30,8 @@ module.exports.handler = async (event) => {
   ready = ready || loadSecrets().catch((err) => { ready = null; throw err; });
   await ready;
   // Required after the secrets are loaded: db/pool.js reads DATABASE_URL when it is first loaded.
-  const { processSqsEvent } = require('../services/audit-alerts/worker');
-  return processSqsEvent(event);
+  const { handle } = require('../services/audit-alerts/worker');
+  return handle(event); // SQS messages, or a scheduled { task: "sweep" | "daily-summary" }
 };
 
 module.exports.loadSecrets = loadSecrets;
