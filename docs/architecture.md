@@ -123,6 +123,165 @@ One database, reached by every service through the limited login `ffm_app` (righ
 Every query filters by the signed-in user's `team_id` (or the API key's team). An id from another
 team gets `404`, so its existence is not revealed.
 
+### Entity-relationship diagram
+
+All tables from `backend/db/migrations/001`–`004` (the hand-made `sessions` table from 001 was
+dropped in 002; express-session's `session` table replaced it). `team_id` on almost every table is
+what keeps teams apart.
+
+```mermaid
+erDiagram
+  teams ||--o{ users : "has"
+  teams ||--o{ flags : "owns"
+  teams ||--o{ api_keys : "owns"
+  teams ||--o{ audit_events : "scopes (null = no team)"
+  teams ||--o{ alert_rules : "configures"
+  teams ||--o{ alerts : "receives"
+  users ||--o{ flags : "created_by"
+  users ||--o{ api_keys : "created_by"
+  users ||--o{ audit_events : "actor_id"
+  flags ||--|{ flag_environments : "one per env (dev, staging, prod)"
+  flag_environments ||--|| rollouts : "percentage"
+  flag_environments ||--o{ user_rules : "allow / block"
+  api_keys ||--o{ api_key_usage : "per-minute count"
+  audit_events ||--o| alerts : "raises"
+
+  teams {
+    uuid id PK
+    text name UK
+    timestamptz created_at
+  }
+  users {
+    uuid id PK
+    uuid team_id FK
+    text email UK "lower(email)"
+    text name
+    text password_hash "bcrypt"
+    text role "admin or developer"
+    timestamptz created_at
+  }
+  flags {
+    uuid id PK
+    uuid team_id FK
+    text key "UK with team_id"
+    text name
+    text description
+    timestamptz archived_at "null = active"
+    int version "optimistic locking, 409"
+    uuid created_by FK
+    timestamptz updated_at
+  }
+  flag_environments {
+    uuid flag_id PK,FK
+    text env PK "dev, staging, prod"
+    boolean enabled "starts false"
+    int version
+    timestamptz updated_at
+  }
+  rollouts {
+    uuid flag_id PK,FK
+    text env PK,FK
+    numeric percentage "0 to 100"
+    int version
+    timestamptz updated_at
+  }
+  user_rules {
+    uuid id PK
+    uuid flag_id FK
+    text env FK
+    text user_id "UK with flag_id, env"
+    text kind "allow or block"
+    timestamptz created_at
+  }
+  api_keys {
+    uuid id PK
+    uuid team_id FK
+    text env "the key decides the env"
+    text name
+    text prefix "safe to show"
+    text key_hash UK "SHA-256, never the key"
+    uuid created_by FK
+    timestamptz last_used_at
+    timestamptz revoked_at
+  }
+  api_key_usage {
+    uuid key_id PK,FK
+    timestamptz window_start PK "the minute"
+    int count "120 per minute limit"
+  }
+  login_attempts {
+    bigint id PK
+    text email_hash "SHA-256"
+    text ip
+    boolean success
+    timestamptz at "append-only"
+  }
+  session {
+    varchar sid PK
+    json sess
+    timestamp expire
+  }
+  audit_events {
+    bigint id PK
+    uuid team_id FK "nullable"
+    uuid actor_id FK
+    text actor_label
+    text category "change or security"
+    text action "flag.toggled, access.denied ..."
+    text target_type
+    text target_id
+    jsonb details "redacted"
+    text request_id
+    text ip
+    timestamptz at "append-only"
+  }
+  alert_rules {
+    uuid team_id PK,FK
+    text rule PK "prod_change, key_change, login_failures"
+    boolean enabled
+  }
+  alerts {
+    uuid id PK
+    uuid team_id FK
+    bigint audit_event_id FK
+    text rule
+    text title
+    text status "open, sending, sent, failed"
+    int github_issue_number
+    text github_issue_url
+    text last_error
+    timestamptz updated_at
+  }
+```
+
+`login_attempts` and `session` have no foreign keys on purpose: an attempt is stored before anyone
+is known (only a hash of the email), and the session store manages its own rows.
+`ffm_app` may only INSERT and SELECT on `audit_events` and `login_attempts`, so the history cannot
+be changed ([ST-10](../backend/shared/__tests__/audit-grants.db.test.js)).
+
+### Alerts: automatic and manual
+
+An alert is raised **automatically** in the same transaction as the audit row that matched a rule
+(`alerts.raiseFor` in `shared/audit.js`). Delivery to GitHub then happens after COMMIT: inline on
+Vercel, through the SQS outbox and `ffm-alert-worker` on Floci. Two **manual** actions exist for
+Admins: **Retry** one failed alert, and **Replay** the team's dead letters.
+
+```mermaid
+stateDiagram-v2
+  [*] --> open: rule matched (same transaction as the audit row)
+  open --> sending: claimed (atomic UPDATE, so only one copy sends)
+  sending --> sent: GitHub issue created (number + URL stored)
+  sending --> failed: GitHub refused or timed out (last_error stored)
+  failed --> sending: SQS retry (up to 3 tries on Floci)
+  failed --> sending: Admin presses Retry (manual)
+  failed --> sending: Admin presses Replay on the dead-letter card (manual)
+  sending --> sending: stuck over 2 min, the sweeper re-queues it
+  sent --> [*]
+```
+
+A `sent` alert is never sent again: a second Retry returns the existing issue (`200`), and a
+duplicate SQS message finds nothing to claim.
+
 ## 4. Request flows
 
 ### a. An Admin changes a rollout

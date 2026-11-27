@@ -1,0 +1,10 @@
+# ZAP baseline rules (used by .github/workflows/zap-baseline.yml).
+# Format: <rule id><TAB><IGNORE|WARN|FAIL><TAB><reason>. Lines starting with # are comments.
+# Every IGNORE says why the finding is accepted. Decided after the first live scan, 28 Nov 2026
+# (evidence/test-results/zap-baseline-live.md): 0 FAIL, 6 WARN, 52 PASS.
+10098	WARN	Kept visible on purpose. Vercel adds Access-Control-Allow-Origin * to STATIC files only (HTML, JS, CSS, robots.txt); the API (/api/v1/*) does not send it. A * origin can never carry cookies, and these files are public anyway.
+10096	IGNORE	False positive: 2080374784 in the minified bundle is a bit mask (0x7C000000), not a time.
+10027	IGNORE	False positive: the word "from" inside a library comment in the minified bundle; no internal information.
+10015	IGNORE	Intended: index.html is "public, max-age=0, must-revalidate" so a new deploy shows at once; hashed assets are cacheable by design.
+10050	IGNORE	Intended: Vercel's CDN serves the public static files from its cache (Age header); no private data is cached.
+10109	IGNORE	Informational only: tells ZAP the site is a JavaScript application.
