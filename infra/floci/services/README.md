@@ -73,7 +73,13 @@ SQS ffm-alerts-queue ──trigger, batch 1──► Lambda ffm-alert-worker ─
    ▼
 SQS ffm-alerts-dlq  (kept 14 days; shown on the monitoring page)
 
-CloudWatch alarm ffm-failed-logins (FFM/FailedLogins ≥ 5 in 5 min) ──► SNS ffm-ops-alerts ──► ffm-ops-inbox
+shared/metrics.js (in all three functions, METRICS_NAMESPACE=FFM)
+   │ PutMetricData on every security event
+   ▼
+CloudWatch FFM/FailedLogins · Forbidden · BotCheckFailures · ServerErrors
+   │ alarm ffm-failed-logins: FailedLogins ≥ 5 in 5 min
+   ▼
+SNS ffm-ops-alerts ──► ffm-ops-inbox (SQS subscriber, to show delivery)
 ```
 
 - The request only queues the alert id and answers (89 ms for a prod toggle, against about
@@ -85,17 +91,28 @@ CloudWatch alarm ffm-failed-logins (FFM/FailedLogins ≥ 5 in 5 min) ──► S
   finds nothing to claim and is dropped (`"status":"skipped"` in the log).
 - If the queue cannot be reached, the request sends the issue inline instead (about 2 s), so no
   alert waits forever. On **Vercel** `ALERTS_QUEUE_URL` is not set and delivery is inline, as before.
-- `s2-lambdas.sh` keeps `ALERTS_QUEUE_URL` when it redeploys, and `s3-audit.sh` adds the send
-  permission as its own policy (`ffm-alerts-send`), so the two scripts can run in any order after
-  the first time.
+- Metrics are counted where the audit log records the event (`shared/audit.js`), so all
+  services count the same way. A failed login is counted only after its row is saved; a 403 or
+  server error is counted even when the database is down. CloudWatch being down costs a request
+  at most about 0.5 s and is only logged (`metrics: not sent`). With `METRICS_NAMESPACE` unset
+  (Vercel) nothing is sent.
+- `rate_limit.hit` has no metric here: `FFM/RateLimitHits` is S2's (Habiba's) bonus item.
+- `s2-lambdas.sh` keeps `ALERTS_QUEUE_URL` and `METRICS_NAMESPACE` when it redeploys, and
+  `s3-audit.sh` adds the permissions as their own policies (`ffm-alerts-send`, `ffm-metrics-put`),
+  so the two scripts can run in any order after the first time.
 
 ```bash
 bash infra/floci/services/s3-audit.sh       # needs DATABASE_URL_APP, GITHUB_TOKEN, GITHUB_REPO in .env
 source infra/floci/services/_lib.sh
 awsl sqs get-queue-attributes --queue-url http://floci:4566/000000000000/ffm-alerts-dlq --attribute-names ApproximateNumberOfMessages
 awsl logs tail /aws/lambda/ffm-alert-worker
+awsl cloudwatch describe-alarm-history --alarm-name ffm-failed-logins --history-item-type StateUpdate
+awsl sqs receive-message --queue-url http://floci:4566/000000000000/ffm-ops-inbox   # the alarm's SNS message
 ```
 
 Checked on 27 Nov 2026 (Floci 2.5.0): the SQS trigger runs the worker; a failing message is offered
 3 times and then moved to the DLQ; the alarm changes to ALARM and SNS delivers its message to the
-subscribed queue. All of these actually run on Floci, not only recorded.
+subscribed queue. All of these actually run on Floci, not only recorded. Live test: 6 wrong
+passwords → `FFM/FailedLogins` = 6 → alarm OK → ALARM within a minute → SNS message
+"ALARM: ffm-failed-logins" in `ffm-ops-inbox`; two Developer requests to `/monitoring` →
+`FFM/Forbidden` = 2.

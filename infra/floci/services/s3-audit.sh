@@ -5,7 +5,8 @@ set -euo pipefail
 #   Amazon SQS       ffm-alerts-queue (+ ffm-alerts-dlq after 3 tries): the outbox. After COMMIT the
 #                    flags / eval / audit functions put { alertId } on it; ffm-alert-worker opens
 #                    the GitHub issue. Answers the tutor's "outbox with no processor".
-#   Amazon CloudWatch alarm ffm-failed-logins: metric FFM/FailedLogins >= 5 in 5 minutes -> SNS.
+#   Amazon CloudWatch metrics FFM/FailedLogins, Forbidden, BotCheckFailures, ServerErrors (sent by
+#                    shared/metrics.js) and alarm ffm-failed-logins: FailedLogins >= 5 in 5 min -> SNS.
 #   Amazon SNS       ffm-ops-alerts: receives the alarm (and S1's prod-change events). The queue
 #                    ffm-ops-inbox is subscribed so delivery can be shown without real email.
 #   (plumbing, not counted) Lambda ffm-alert-worker, IAM role ffm-alert-worker-role,
@@ -32,6 +33,7 @@ WORKER_LOGS="/aws/lambda/${WORKER}"
 DB_SECRET="ffm/worker-db"
 GH_SECRET="ffm/github-token"
 ALARM="ffm-failed-logins"
+NAMESPACE="FFM"        # CloudWatch metrics from shared/metrics.js
 PRODUCERS=(ffm-flags-fn ffm-eval-fn ffm-audit-fn)   # every function that can raise an alert
 
 TOPIC_ARN="arn:aws:sns:${REGION}:${ACCOUNT_ID}:${TOPIC}"
@@ -177,12 +179,18 @@ fi
 echo "  trigger     ${QUEUE} -> ${WORKER}"
 echo "[5/7] done"
 
-echo "=== [6/7] Producers: functions that raise alerts may send to ${QUEUE} ==="
+echo "=== [6/7] Producers: the three functions may queue alerts and send metrics ==="
 # A separate inline policy and one extra setting, so s2-lambdas.sh re-runs keep them
-# (it rewrites only its own "<fn>-access" policy, and it keeps ALERTS_QUEUE_URL).
+# (it rewrites only its own "<fn>-access" policy, and it keeps ALERTS_QUEUE_URL and METRICS_NAMESPACE).
 cat > "$TMP/send-policy.json" <<JSON
 { "Version": "2012-10-17", "Statement": [ { "Sid": "SendOnlyToTheAlertQueue", "Effect": "Allow",
   "Action": "sqs:SendMessage", "Resource": "${QUEUE_ARN}" } ] }
+JSON
+# PutMetricData has no resource ARN in AWS, so it is limited by namespace instead: FFM only.
+cat > "$TMP/metrics-policy.json" <<JSON
+{ "Version": "2012-10-17", "Statement": [ { "Sid": "PutMetricsOnlyInFFM", "Effect": "Allow",
+  "Action": "cloudwatch:PutMetricData", "Resource": "*",
+  "Condition": { "StringEquals": { "cloudwatch:namespace": "${NAMESPACE}" } } } ] }
 JSON
 MISSING=0
 for fn in "${PRODUCERS[@]}"; do
@@ -192,6 +200,7 @@ for fn in "${PRODUCERS[@]}"; do
   role=$(awsl lambda get-function-configuration --function-name "$fn" --query Role --output text)
   awsl iam put-role-policy --role-name "${role##*/}" --policy-name ffm-alerts-send \
     --policy-document "file://$TMP/send-policy.json"
+  awsl iam put-role-policy --role-name "${role##*/}" --policy-name ffm-metrics-put     --policy-document "file://$TMP/metrics-policy.json"
   awsl lambda get-function-configuration --function-name "$fn" --query Environment.Variables --output json \
     > "$TMP/env.json"
   node -e "
@@ -199,10 +208,11 @@ for fn in "${PRODUCERS[@]}"; do
     let vars = {};
     try { vars = JSON.parse(fs.readFileSync('$TMP/env.json', 'utf8')) || {}; } catch {}
     vars.ALERTS_QUEUE_URL = process.argv[1];
+    vars.METRICS_NAMESPACE = process.argv[2];
     fs.writeFileSync('$TMP/env.json', JSON.stringify({ Variables: vars }));
-  " "$QUEUE_URL"
+  " "$QUEUE_URL" "$NAMESPACE"
   awsl lambda update-function-configuration --function-name "$fn" --environment "file://$TMP/env.json" >/dev/null
-  echo "  ${fn}: ALERTS_QUEUE_URL set, role ${role##*/} may send"
+  echo "  ${fn}: ALERTS_QUEUE_URL + METRICS_NAMESPACE set, role ${role##*/} may send to both"
 done
 echo "[6/7] done"
 

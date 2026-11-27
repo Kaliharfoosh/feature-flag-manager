@@ -18,6 +18,7 @@
 const { pool } = require('../db/pool');
 const alerts = require('../services/audit-alerts/alerts');
 const github = require('../services/audit-alerts/github');
+const metrics = require('./metrics');
 
 const CATEGORIES = ['change', 'security'];
 const ACTION_PATTERN = /^[a-z][a-z_]*(\.[a-z][a-z_]*)+$/; // flag.toggled, alert_rules.updated
@@ -146,6 +147,9 @@ async function record(tx, req, event) {
   const id = Number(rows[0].id);
   const alert = await alerts.raiseFor(tx, row, id);
   if (alert && req && typeof req === 'object') (req.pendingAlerts ??= []).push(alert.id);
+  // login.failed is the one security event written in a transaction (with login_attempts).
+  // CloudWatch, when on, waits at most ~1 s and never throws (shared/metrics.js).
+  if (row.category === 'security') await metrics.count(row.action, { log: (req && req.log) || console });
   return { id, at: rows[0].at, alert };
 }
 
@@ -154,6 +158,8 @@ async function record(tx, req, event) {
 // A bad action name is a programming error, so that one still throws.
 async function recordSecurity(req, action, details = {}, { teamId, db = pool } = {}) {
   const row = buildRow(req, { category: 'security', action, details, teamId });
+  // Counted first, so CloudWatch still sees 403s and server errors when the database is down.
+  await metrics.count(action, { log: (req && req.log) || console });
   try {
     const { rows } = await insert(db, row);
     const id = Number(rows[0].id);
