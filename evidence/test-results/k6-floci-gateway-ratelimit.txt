@@ -1,0 +1,97 @@
+# Run C through the Floci API Gateway -> Lambda ffm-eval-fn (S2), 2026-11-27 04:38:01 +0200
+# BASE_URL=http://4a2f509b5e.execute-api.localhost.floci.io:4566  (ffm-eval-fn temporarily on the throwaway DB ffm-loadtest-db, never Neon)
+# Command: k6 run -e BASE_URL=<gateway> -e FFM_KEY=<local staging key> tests/load/evaluations-ratelimit.js
+
+
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+
+     execution: local
+        script: tests/load/evaluations-ratelimit.js
+        output: -
+
+     scenarios: (100.00%) 1 scenario, 10 max VUs, 1m20s max duration (incl. graceful stop):
+              * burst: 150 iterations shared among 10 VUs (maxDuration: 50s, gracefulStop: 30s)
+
+
+running (0m01.0s), 10/10 VUs, 45 complete and 0 interrupted iterations
+burst   [  30% ] 10 VUs  01.0s/50s  045/150 shared iters
+
+running (0m02.0s), 10/10 VUs, 70 complete and 0 interrupted iterations
+burst   [  47% ] 10 VUs  02.0s/50s  070/150 shared iters
+
+running (0m03.0s), 10/10 VUs, 96 complete and 0 interrupted iterations
+burst   [  64% ] 10 VUs  03.0s/50s  096/150 shared iters
+
+running (0m04.0s), 10/10 VUs, 127 complete and 0 interrupted iterations
+burst   [  85% ] 10 VUs  04.0s/50s  127/150 shared iters
+
+running (0m05.0s), 10/10 VUs, 140 complete and 0 interrupted iterations
+burst   [  93% ] 10 VUs  05.0s/50s  140/150 shared iters
+
+running (0m06.0s), 07/10 VUs, 143 complete and 0 interrupted iterations
+burst   [  95% ] 10 VUs  06.0s/50s  143/150 shared iters
+
+running (0m07.0s), 06/10 VUs, 144 complete and 0 interrupted iterations
+burst   [  96% ] 10 VUs  07.0s/50s  144/150 shared iters
+
+running (0m08.0s), 03/10 VUs, 147 complete and 0 interrupted iterations
+burst   [  98% ] 10 VUs  08.0s/50s  147/150 shared iters
+
+
+  █ THRESHOLDS 
+
+    http_req_failed
+    ✓ 'rate==0' rate=0.00%
+
+    status_200
+    ✓ 'count<=120' count=120
+
+    status_429
+    ✓ 'count>=1' count=30
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 60      7.301105/s
+    checks_succeeded...: 100.00% 60 out of 60
+    checks_failed......: 0.00%   0 out of 60
+
+    ✓ 429 has Retry-After (1-60 s)
+    ✓ 429 code is RATE_LIMITED
+
+    CUSTOM
+    status_200.....................: 120    14.602209/s
+    status_429.....................: 30     3.650552/s
+
+    HTTP
+    http_req_duration..............: avg=471.1ms  min=9.84ms med=16.77ms max=8.2s  p(90)=124.63ms p(95)=5.75s
+      { expected_response:true }...: avg=471.1ms  min=9.84ms med=16.77ms max=8.2s  p(90)=124.63ms p(95)=5.75s
+    http_req_failed................: 0.00%  0 out of 150
+    http_reqs......................: 150    18.252762/s
+
+    EXECUTION
+    iteration_duration.............: avg=471.74ms min=9.84ms med=17.24ms max=8.21s p(90)=124.68ms p(95)=5.76s
+    iterations.....................: 150    18.252762/s
+    vus............................: 3      min=3        max=10
+    vus_max........................: 10     min=10       max=10
+
+    NETWORK
+    data_received..................: 184 kB 22 kB/s
+    data_sent......................: 42 kB  5.1 kB/s
+
+
+
+
+running (0m08.2s), 00/10 VUs, 150 complete and 0 interrupted iterations
+burst ✓ [ 100% ] 10 VUs  08.2s/50s  150/150 shared iters
+
+# Checked afterwards in the throwaway database (psql as postgres):
+#   audit_events WHERE action='rate_limit.hit'  -> 1 row
+#   api_key_usage (window 02:38 UTC)            -> count 121  (120 allowed + the first refusal)
+# Then s2-lambdas.sh was re-run: ffm/eval-db points at Neon again (the test key now gets 401),
+# and the throwaway database was removed (docker rm -f ffm-loadtest-db).
