@@ -6,6 +6,9 @@ import FlagsPage from './flags/FlagsPage.jsx'
 import RolloutPage from './rollouts/RolloutPage.jsx'
 import AuditPage from './audit/AuditPage.jsx'
 import MonitoringPage from './audit/MonitoringPage.jsx'
+import LoginTerminal from './auth/LoginTerminal.jsx'
+import StatusBar from './StatusBar.jsx'
+import CommandPalette from './CommandPalette.jsx'
 import './App.css'
 
 function App() {
@@ -19,6 +22,19 @@ function App() {
   const [sessionCheck, setSessionCheck] = useState(0)
   const [signingOut, setSigningOut] = useState(false)
   const [logoutError, setLogoutError] = useState('')
+  const [paletteOpen, setPaletteOpen] = useState(false)
+
+  // Ctrl+K / ⌘K opens the command palette (signed in only).
+  useEffect(() => {
+    function onKey(event) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && session) {
+        event.preventDefault()
+        setPaletteOpen((open) => !open)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [session])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -82,25 +98,31 @@ function App() {
         <div className={session ? "header-content signed-in-header" : "header-content"}>
           <div className="brand">
             <span className="brand-mark" aria-hidden="true" />
-            Feature Flag Manager
+            <span>Feature Flag Manager <span className="brand-sub">/ control plane</span></span>
           </div>
           {session && (
             <>
               <nav className="workspace-nav" aria-label="Workspace">
-                <NavLink to="/" end>Flags</NavLink>
-                <NavLink to="/audit">Audit</NavLink>
-                {session.user.role === 'admin' && <NavLink to="/monitoring">Monitoring</NavLink>}
-                <NavLink to="/account">Account</NavLink>
+                <NavLink to="/" end>flags</NavLink>
+                <NavLink to="/audit">audit</NavLink>
+                {session.user.role === 'admin' && <NavLink to="/monitoring">monitoring</NavLink>}
+                <NavLink to="/account">account</NavLink>
               </nav>
-              <button className="secondary" type="button" onClick={handleSignOut} disabled={signingOut}>
-                {signingOut ? 'Signing out…' : 'Sign out'}
-              </button>
+              <div className="header-actions">
+                <button type="button" className="palette-hint" onClick={() => setPaletteOpen(true)} aria-label="Open the command palette (Ctrl+K)">
+                  <span aria-hidden="true">⌕</span> Search <kbd>Ctrl K</kbd>
+                </button>
+                <button className="secondary" type="button" onClick={handleSignOut} disabled={signingOut}>
+                  {signingOut ? 'Signing out…' : 'Sign out'}
+                </button>
+              </div>
             </>
           )}
         </div>
       </header>
 
       <main className={session && !accountView ? "workspace-page" : "page"}>
+        <div className="route-view" key={session ? pathname : 'signed-out'}>
         {session === undefined && (
           <section className="panel" aria-label="Session status">
             {sessionError ? (
@@ -115,7 +137,18 @@ function App() {
           </section>
         )}
 
-        {session === null && <LoginForm onSignIn={handleSignIn} />}
+        {session === null && (
+          <div className="signin-layout">
+            <LoginForm onSignIn={handleSignIn} />
+            <div className="signin-side">
+              <div className="signin-copy">
+                <h2>Ship features <span>dark</span>.<br />Turn them on live.</h2>
+                <p>Percentage rollouts, allow and block lists, and an audit trail for every change, served to your apps at a few milliseconds per evaluation.</p>
+              </div>
+              <LoginTerminal />
+            </div>
+          </div>
+        )}
 
         {session && logoutError && <p className="workspace-error" role="alert">{logoutError}</p>}
         {session && rolloutMatch && (
@@ -134,7 +167,13 @@ function App() {
             </dl>
           </section>
         )}
+        </div>
       </main>
+
+      <StatusBar session={session} onOpenPalette={() => setPaletteOpen(true)} />
+      {session && (
+        <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} session={session} onSignOut={handleSignOut} />
+      )}
     </>
   )
 }

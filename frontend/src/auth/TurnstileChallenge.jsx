@@ -58,7 +58,7 @@ export default function TurnstileChallenge({ onToken }) {
         widget = api.render(container.current, {
           sitekey: config.siteKey,
           action: config.action,
-          theme: 'light',
+          theme: 'dark',
           size: container.current.clientWidth < 300 ? 'compact' : 'flexible',
           callback: (token) => {
             if (!active) return

@@ -32,6 +32,7 @@ export default function LoginForm({ onSignIn }) {
 
   return (
     <section className="panel" aria-labelledby="sign-in-heading">
+      <p className="panel-kicker" aria-hidden="true">// authenticate</p>
       <h1 id="sign-in-heading">Sign in</h1>
       <p className="panel-description">Sign in to manage your team’s feature flags.</p>
 
