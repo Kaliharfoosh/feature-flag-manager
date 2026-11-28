@@ -56,13 +56,16 @@ SES identities are verified only inside Floci; no real email is sent.
 
 **Every run deploys**: it rebuilds `build/lambda.zip` and uploads it to all three functions, so
 run it again after any code change. Roles, log groups, secrets and routes are updated, never
-duplicated. `SKIP_BUILD=1 bash infra/floci/services/s2-lambdas.sh` reuses the last zip.
+duplicated. The legacy `ffm-api` Lambda and role are kept by default; set
+`CLEANUP_LEGACY=1` only when you intentionally want the script to remove them after its checks.
+`SKIP_BUILD=1 bash infra/floci/services/s2-lambdas.sh` reuses the last zip.
 
 It needs `DATABASE_URL_APP` (the `ffm_app` login) in `.env` and stops with a clear message if that
 is missing. It ends with a self-test: each function's health on its own (proves Lambda → Secrets
 Manager → Neon), then nine requests through API Gateway, checking the status AND which function
 answered. One of them is `GET /api/v1/auth/config`: it answers 503 if the login bot check has no
-keys, which means nobody can log in on Floci. After every check passes it removes the old Lab 7 function `ffm-api` and its role.
+keys, which means nobody can log in on Floci. After the checks pass, the old Lab 7 function and
+role stay in place unless `CLEANUP_LEGACY=1` was set.
 
 ## Honest limits (for the report)
 

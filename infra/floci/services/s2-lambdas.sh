@@ -15,7 +15,8 @@ set -euo pipefail
 # Run from Git Bash, Floci running:   bash infra/floci/services/s2-lambdas.sh
 # Every run DEPLOYS: it rebuilds the code and uploads it to all three functions. Anything that
 # already exists (roles, log groups, routes) is kept or updated, never duplicated.
-# After all self-tests pass it removes the old Lab 7 single function ffm-api (and its role).
+# After all self-tests pass it keeps the old Lab 7 function by default.
+# Set CLEANUP_LEGACY=1 to remove ffm-api and its role after successful checks.
 # SKIP_BUILD=1 reuses the last build/lambda.zip. Secrets are never printed.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 cd "$REPO"
@@ -264,14 +265,17 @@ if [ "$FAILED" != 0 ]; then
   exit 1
 fi
 
-echo "=== [6/6] Clean up the old Lab 7 single function (ffm-api) ==="
-# Runs only AFTER every check above passed, so the old function is removed only once the new
-# ones are proven to answer. Kept on purpose:
+echo "=== [6/6] Legacy Lab 7 cleanup ==="
+# Runs only AFTER every check above passed. Optional cleanup removes the old function only once
+# the new ones are proven to answer. These are kept even when cleanup is requested:
 #   ffm/api-secrets      the shared session secret is copied from it (step 0)
 #   /aws/lambda/ffm-api  its old logs are Lab 7 evidence
 OLD_FN="ffm-api"
 OLD_ROLE="ffm-api-role"
 OLD_ARN="arn:aws:lambda:${REGION}:${ACCOUNT_ID}:function:${OLD_FN}"
+if [ "${CLEANUP_LEGACY:-}" != "1" ]; then
+  echo "  keeping ${OLD_FN} and ${OLD_ROLE}; set CLEANUP_LEGACY=1 to remove them after deployment"
+else
 # API Gateway connections to ffm-api (no route uses them any more after step 3)
 for id in $(awsl apigatewayv2 get-integrations --api-id "$API"     --query "Items[?IntegrationUri=='${OLD_ARN}'].IntegrationId" --output text); do
   if [ -n "$(awsl apigatewayv2 get-routes --api-id "$API" --query "Items[?Target=='integrations/${id}'].RouteKey" --output text)" ]; then
@@ -301,6 +305,7 @@ else
   echo "  (IAM role ${OLD_ROLE} already gone)"
 fi
 echo "[6/6] done (kept: secret ffm/api-secrets, log group /aws/lambda/ffm-api)"
+fi
 
 echo
 echo "All three functions are deployed and routed.  API Gateway: ${BASE}"
