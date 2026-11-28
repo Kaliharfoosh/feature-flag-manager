@@ -41,6 +41,7 @@ function KeysWorkspace({ session }) {
   const [name, setName] = useState('')
   const [env, setEnv] = useState('staging')
   const [creating, setCreating] = useState(false)
+  const [nameError, setNameError] = useState('')
   const [createError, setCreateError] = useState('')
   const [created, setCreated] = useState(null)
   const [copyMessage, setCopyMessage] = useState('')
@@ -78,12 +79,20 @@ function KeysWorkspace({ session }) {
   async function create(event) {
     event.preventDefault()
     if (creatingRef.current || created) return
+    const trimmedName = name.trim()
+    if (!trimmedName) {
+      setCreateError('')
+      setNameError('Enter a name for this key.')
+      nameInput.current?.focus()
+      return
+    }
     creatingRef.current = true
     setCreating(true)
+    setNameError('')
     setCreateError('')
     setNotice('')
     try {
-      const result = await api.createKey({ name: name.trim(), env }, session.csrfToken)
+      const result = await api.createKey({ name: trimmedName, env }, session.csrfToken)
       const { key, ...item } = result
       setCreated({ ...item, key })
       setCopyMessage('')
@@ -164,10 +173,11 @@ function KeysWorkspace({ session }) {
       <section className="keys-create" aria-labelledby="create-key-title">
         <div><h2 id="create-key-title">Create a key</h2><p>Give it a clear name and choose the environment it can read.</p></div>
         <form onSubmit={create} className="keys-create-form">
-          <div><label htmlFor="key-name">Key name</label><input id="key-name" ref={nameInput} value={name} onChange={(event) => setName(event.target.value)} maxLength={60} required placeholder="e.g. Storefront staging" disabled={creating || Boolean(created)} /></div>
+          <div><label htmlFor="key-name">Key name</label><input id="key-name" ref={nameInput} value={name} onChange={(event) => { setName(event.target.value); if (event.target.value.trim()) setNameError('') }} maxLength={60} aria-invalid={Boolean(nameError)} aria-describedby={nameError ? 'key-name-error' : undefined} placeholder="e.g. Storefront staging" disabled={creating || Boolean(created)} /></div>
           <div><label htmlFor="key-env">Environment</label><select id="key-env" value={env} onChange={(event) => setEnv(event.target.value)} disabled={creating || Boolean(created)}>{Object.entries(environmentNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
-          <button className="primary" type="submit" disabled={creating || Boolean(created) || !name.trim()}>{creating ? 'Creating…' : '＋ Create key'}</button>
+          <button className="primary" type="submit" disabled={creating || Boolean(created)}>{creating ? 'Creating…' : '＋ Create key'}</button>
         </form>
+        {nameError && <p id="key-name-error" className="error" role="alert">{nameError}</p>}
         {created && <p className="key-form-hint">Save and hide your new key before creating another.</p>}
         {createError && <p className="error" role="alert">{createError}</p>}
       </section>
