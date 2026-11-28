@@ -42,12 +42,19 @@ append-only, no access to the migration table).
 Docker Desktop running, then from the repo root:
 
 ```bash
-docker compose -f infra/floci/docker-compose.yml up -d   # Floci
-bash infra/floci/services/s2-lambdas.sh                  # Git Bash: build + deploy everything
-bash infra/floci/services/s2-website.sh                  # the frontend on S3, calling that API
-bash infra/floci/services/s3-audit.sh                    # S3's alert outbox, alarm and schedules
-bash infra/floci/services/s1-flags.sh                    # S1 snapshot storage, events and SES
+docker compose -f infra/floci/docker-compose.yml up -d
+bash infra/floci/services/s2-lambdas.sh
+bash infra/floci/services/s3-audit.sh
+bash infra/floci/services/s1-flags.sh
+bash infra/floci/services/s2-website.sh
+node infra/floci/services/capture-evidence.js
 ```
+
+Each student's script remains separate. S1's `s1-flags.sh` runs after S2's Lambdas
+and S3's SNS topic are ready. The final read-only command writes
+`evidence/test-results/floci-services.json` with resource names and statuses,
+without secret values. Run it again to refresh the evidence after any deployment.
+Run `s2-website.sh` after frontend changes to rebuild the hosted site.
 
 Run `s1-flags.sh` after `s2-lambdas.sh` and `s3-audit.sh`. If Habiba reruns `s2-lambdas.sh`, run
 `s1-flags.sh` again afterward to restore S1's Lambda settings and permissions. The S1 script

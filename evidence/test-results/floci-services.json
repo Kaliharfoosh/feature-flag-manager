@@ -1,0 +1,81 @@
+{
+  "kind": "Local Floci resource and route verification",
+  "checkedAt": "2026-11-28T01:15:39.284Z",
+  "revision": "f1a0ce7",
+  "endpoint": "http://localhost:4566",
+  "apiUrl": "http://7afd092504.execute-api.localhost.floci.io:4566",
+  "webUrl": "http://ffm-web.s3-website.localhost.floci.io:4566",
+  "s1": {
+    "bucket": "ffm-flag-snapshots",
+    "versioning": "Enabled",
+    "kmsAlias": "alias/ffm-flags",
+    "kmsState": "Enabled",
+    "eventBus": "ffm-events",
+    "eventRules": [
+      "prod-flag-change"
+    ],
+    "sesVerifiedSenders": [
+      "admin@example.test",
+      "security@ffm.local"
+    ]
+  },
+  "s2": {
+    "functions": [
+      "ffm-flags-fn",
+      "ffm-eval-fn",
+      "ffm-audit-fn"
+    ],
+    "apiGateway": "ffm-http-api",
+    "routeCount": 19,
+    "secretNames": [
+      "ffm/flags-db",
+      "ffm/eval-db",
+      "ffm/audit-db"
+    ],
+    "websiteBucket": "ffm-web"
+  },
+  "s3": {
+    "worker": "ffm-alert-worker",
+    "queues": [
+      "ffm-alerts-queue",
+      "ffm-alerts-dlq",
+      "ffm-ops-inbox"
+    ],
+    "topic": "ffm-ops-alerts",
+    "alarm": "ffm-failed-logins",
+    "alarmState": "OK",
+    "schedules": [
+      "ffm-alert-sweeper",
+      "ffm-daily-audit-summary"
+    ],
+    "secretNames": [
+      "ffm/worker-db",
+      "ffm/github-token"
+    ]
+  },
+  "checks": [
+    {
+      "path": "/api/v1/health",
+      "status": 200,
+      "servedBy": "eval"
+    },
+    {
+      "path": "/api/v1/flags",
+      "status": 401,
+      "servedBy": "flags"
+    },
+    {
+      "path": "/api/v1/audit",
+      "status": 401,
+      "servedBy": "audit"
+    },
+    {
+      "path": "/",
+      "status": 200
+    }
+  ],
+  "limitations": [
+    "Floci records IAM policies but does not prove real AWS IAM enforcement.",
+    "Local login uses Cloudflare Turnstile test keys."
+  ]
+}
