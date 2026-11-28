@@ -26,7 +26,7 @@ Roles live in `users.role` and are checked by the backend (`requireRole()` in
 | Where | Vercel + Neon | Floci (AWS emulator, `localhost:4566`) + the same Neon database |
 | URL | https://feature-flag-manager-cyan.vercel.app | `http://ffm-web.s3-website.localhost.floci.io:4566` |
 | Backend | One Vercel Function running all three services (`api/index.js` → `backend/app.js`) | Three Lambdas, one per service, behind API Gateway (`backend/lambdas/*.js`) |
-| Built by | Git push → Vercel build (`vercel.json`) | Scripts: `infra/floci/services/s2-lambdas.sh`, `s3-audit.sh` |
+| Built by | Git push → Vercel build (`vercel.json`) | Scripts: `infra/floci/services/s2-lambdas.sh`, `s3-audit.sh`, `s1-flags.sh`, `s2-website.sh` |
 | Secrets | Vercel environment variables (Sensitive) | AWS Secrets Manager, one secret per function |
 
 Both start from `buildApp()` in `backend/build-app.js`. Vercel calls it with all three services;
@@ -391,5 +391,5 @@ secrets, the firewall rules, the IAM policies and watching the logs.
 - The Vercel free plan allows one edge rate-limit rule; it is used for login (FW1). Evaluations
   are limited by the app (120 per minute per key) and, on Floci, by the API Gateway throttle.
 - All services share the `ffm_app` login. A login per service would contain a bug in one service.
-- S1's AWS services and the `/keys` endpoints are not built yet; keys are created with
-  `npm run seed:key` until then.
+- S1's local Floci services and the `/keys` endpoints are implemented. The public Vercel
+  deployment can use snapshot recovery only when its S3 and KMS configuration is provided.
